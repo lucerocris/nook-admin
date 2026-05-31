@@ -11,6 +11,7 @@ import {
   UsersIcon,
   TagIcon,
   ChatCircleTextIcon,
+  ClipboardTextIcon,
   SignOutIcon,
 } from "@phosphor-icons/react"
 import { toast } from "sonner"
@@ -24,6 +25,7 @@ import {
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
+  SidebarMenuBadge,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 
@@ -36,13 +38,17 @@ type NavItem = {
 const navItems: NavItem[] = [
   { title: "Dashboard", url: "/admin/dashboard", icon: SquaresFourIcon },
   { title: "Cafes", url: "/admin/cafes", icon: StorefrontIcon },
+  { title: "Claims", url: "/admin/claims", icon: ClipboardTextIcon },
   { title: "Owners", url: "/admin/owners", icon: IdentificationCardIcon },
   { title: "Users", url: "/admin/users", icon: UsersIcon },
   { title: "Tags", url: "/admin/tags", icon: TagIcon },
   { title: "Reviews", url: "/admin/reviews", icon: ChatCircleTextIcon },
 ]
 
-export function AdminSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+export function AdminSidebar({
+  pendingClaimsCount = 0,
+  ...props
+}: React.ComponentProps<typeof Sidebar> & { pendingClaimsCount?: number }) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
@@ -89,6 +95,8 @@ export function AdminSidebar({ ...props }: React.ComponentProps<typeof Sidebar>)
             {navItems.map((item) => {
               const isActive =
                 pathname === item.url || pathname.startsWith(item.url + "/")
+              const showClaimsBadge =
+                item.title === "Claims" && pendingClaimsCount > 0
               return (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={isActive} tooltip={item.title}>
@@ -97,6 +105,9 @@ export function AdminSidebar({ ...props }: React.ComponentProps<typeof Sidebar>)
                       <span>{item.title}</span>
                     </Link>
                   </SidebarMenuButton>
+                  {showClaimsBadge && (
+                    <SidebarMenuBadge>{pendingClaimsCount}</SidebarMenuBadge>
+                  )}
                 </SidebarMenuItem>
               )
             })}

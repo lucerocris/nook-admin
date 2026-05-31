@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { AdminSidebar } from "@/components/admin/sidebar"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { Separator } from "@/components/ui/separator"
 import {
   SidebarInset,
@@ -14,14 +15,23 @@ export const metadata: Metadata = {
   },
 }
 
-export default function AdminLayout({
+export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  const supabase = createAdminClient()
+
+  const { count, error } = await supabase
+    .from("cafe_claims")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "pending")
+
+  const pendingClaimsCount = error ? 0 : count ?? 0
+
   return (
     <SidebarProvider>
-      <AdminSidebar />
+      <AdminSidebar pendingClaimsCount={pendingClaimsCount} />
       <SidebarInset>
         <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger className="-ml-1" />
