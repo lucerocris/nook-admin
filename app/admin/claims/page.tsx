@@ -23,8 +23,8 @@ export default async function ClaimsPage({
   searchParams: Promise<{ status?: string; search?: string; page?: string }>
 }) {
   const { status: rawStatus, search: rawSearch, page: rawPage } = await searchParams
-  const page = rawPage ? Number(rawPage) : 1
-  const safePage = Number.isFinite(page) && page > 0 ? page : 1
+
+  const safePage = Math.max(1, Number.isFinite(Number(rawPage)) ? Number(rawPage) : 1)
   const pageSize = 20
   const from = (safePage - 1) * pageSize
   const to = from + pageSize - 1
@@ -35,7 +35,6 @@ export default async function ClaimsPage({
     : undefined
 
   const search = rawSearch?.trim() ?? ""
-
   const supabase = createAdminClient()
 
   let cafeIds: string[] | null = null
@@ -47,24 +46,15 @@ export default async function ClaimsPage({
       supabase.from("profiles").select("id").ilike("email", `%${search}%`),
     ])
 
-    if (cafesResult.error) {
-      throw cafesResult.error
-    }
-    if (profilesResult.error) {
-      throw profilesResult.error
-    }
+    if (cafesResult.error) throw cafesResult.error
+    if (profilesResult.error) throw profilesResult.error
 
     cafeIds = (cafesResult.data ?? []).map((row) => row.id)
     claimantIds = (profilesResult.data ?? []).map((row) => row.id)
 
     if (cafeIds.length === 0 && claimantIds.length === 0) {
       return (
-        <ClaimsListClient
-          claims={[]}
-          page={safePage}
-          total={0}
-          totalPages={0}
-        />
+        <ClaimsListClient claims={[]} page={safePage} total={0} totalPages={0} />
       )
     }
   }
@@ -75,20 +65,18 @@ export default async function ClaimsPage({
 
   let dataQuery = supabase
     .from("cafe_claims")
-    .select(
-      `
-        id,
-        cafe_id,
-        claimant_id,
-        status,
-        verification_method,
-        verification_code,
-        created_at,
-        role,
-        cafes ( id, name, address, neighborhood, city, featured_image_url ),
-        profiles ( id, full_name, email, avatar_url )
-      `
-    )
+    .select(`
+      id,
+      cafe_id,
+      claimant_id,
+      status,
+      verification_method,
+      verification_code,
+      created_at,
+      role,
+      cafes!inner ( id, name, address, neighborhood, city, featured_image_url ),
+      profiles ( id, full_name, email, avatar_url )
+    `)
     .order("created_at", { ascending: false })
     .range(from, to)
 
@@ -101,39 +89,33 @@ export default async function ClaimsPage({
   }
 
   if (search) {
-    if ((cafeIds?.length ?? 0) > 0 && (claimantIds?.length ?? 0) > 0) {
-      const cafeList = toPostgrestList(cafeIds ?? [])
-      const claimantList = toPostgrestList(claimantIds ?? [])
-      countQuery = countQuery.or(
-        `cafe_id.in.(${cafeList}),claimant_id.in.(${claimantList})`
-      )
-      dataQuery = dataQuery.or(
-        `cafe_id.in.(${cafeList}),claimant_id.in.(${claimantList})`
-      )
-    } else if ((cafeIds?.length ?? 0) > 0) {
-      countQuery = countQuery.in("cafe_id", cafeIds ?? [])
-      dataQuery = dataQuery.in("cafe_id", cafeIds ?? [])
-    } else if ((claimantIds?.length ?? 0) > 0) {
-      countQuery = countQuery.in("claimant_id", claimantIds ?? [])
-      dataQuery = dataQuery.in("claimant_id", claimantIds ?? [])
+    const hasCafes = (cafeIds?.length ?? 0) > 0
+    const hasClaimants = (claimantIds?.length ?? 0) > 0
+
+    if (hasCafes && hasClaimants) {
+      const filter = `cafe_id.in.(${toPostgrestList(cafeIds!)}),claimant_id.in.(${toPostgrestList(claimantIds!)})`
+      countQuery = countQuery.or(filter)
+      dataQuery = dataQuery.or(filter)
+    } else if (hasCafes) {
+      countQuery = countQuery.in("cafe_id", cafeIds!)
+      dataQuery = dataQuery.in("cafe_id", cafeIds!)
+    } else if (hasClaimants) {
+      countQuery = countQuery.in("claimant_id", claimantIds!)
+      dataQuery = dataQuery.in("claimant_id", claimantIds!)
     }
   }
 
   const [countResult, dataResult] = await Promise.all([countQuery, dataQuery])
 
-  if (countResult.error) {
-    throw countResult.error
-  }
-  if (dataResult.error) {
-    throw dataResult.error
-  }
+  if (countResult.error) throw countResult.error
+  if (dataResult.error) throw dataResult.error
 
   const total = countResult.count ?? 0
   const totalPages = total > 0 ? Math.ceil(total / pageSize) : 0
 
   return (
     <ClaimsListClient
-      claims={(dataResult.data ?? []) as ClaimRow[]}
+      claims={(dataResult.data ?? []) as unknown as ClaimRow[]}
       page={safePage}
       total={total}
       totalPages={totalPages}

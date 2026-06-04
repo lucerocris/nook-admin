@@ -1,8 +1,8 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
+import * as React from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   MagnifyingGlass,
   DotsThree,
@@ -10,19 +10,19 @@ import {
   XCircle,
   Clock,
   UserCircle,
-} from "@phosphor-icons/react"
-import { toast } from "sonner"
+} from "@phosphor-icons/react";
+import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -30,14 +30,14 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
+} from "@/components/ui/table";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,78 +47,78 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
+} from "@/components/ui/alert-dialog";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   approveClaimAction,
   markUnderReviewAction,
   rejectClaimAction,
-} from "@/app/admin/claims/actions"
+} from "@/app/admin/claims/actions";
 
 export type ClaimStatus =
   | "pending"
   | "under_review"
   | "approved"
   | "rejected"
-  | "withdrawn"
+  | "withdrawn";
 
 export type ClaimRow = {
-  id: string
-  cafe_id: string
-  claimant_id: string
-  status: ClaimStatus
-  verification_method: string | null
-  verification_code: string | null
-  created_at: string
-  role: string | null
+  id: string;
+  cafe_id: string;
+  claimant_id: string;
+  status: ClaimStatus;
+  verification_method: string | null;
+  verification_code: string | null;
+  created_at: string;
+  role: string | null;
   cafes: {
-    id: string
-    name: string
-    address: string | null
-    neighborhood: string | null
-    city: string | null
-    featured_image_url: string | null
-  } | null
+    id: string;
+    name: string;
+    address: string | null;
+    neighborhood: string | null;
+    city: string | null;
+    featured_image_url: string | null;
+  } | null;
   profiles: {
-    id: string
-    full_name: string | null
-    email: string | null
-    avatar_url: string | null
-  } | null
-}
+    id: string;
+    full_name: string | null;
+    email: string | null;
+    avatar_url: string | null;
+  } | null;
+};
 
 function formatRelativeTime(isoString: string): string {
-  const diff = Date.now() - new Date(isoString).getTime()
-  const minutes = Math.floor(diff / 60_000)
-  if (minutes < 1) return "Just now"
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  if (days < 7) return `${days}d ago`
-  const weeks = Math.floor(days / 7)
-  if (weeks < 5) return `${weeks}w ago`
-  const months = Math.floor(days / 30)
-  return `${months}mo ago`
+  const diff = Date.now() - new Date(isoString).getTime();
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks}w ago`;
+  const months = Math.floor(days / 30);
+  return `${months}mo ago`;
 }
 
 function formatMethod(verification_method: string | null) {
-  if (verification_method === "instagram_dm") return "Instagram DM"
-  if (verification_method === "document") return "Document"
-  return verification_method ?? "—"
+  if (verification_method === "instagram_dm") return "Instagram DM";
+  if (verification_method === "document") return "Document";
+  return verification_method ?? "—";
 }
 
 function getInitials(name: string | null, email: string | null) {
   if (name) {
-    const parts = name.trim().split(" ")
+    const parts = name.trim().split(" ");
     return parts.length >= 2
       ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-      : parts[0].slice(0, 2).toUpperCase()
+      : parts[0].slice(0, 2).toUpperCase();
   }
-  if (email) return email.slice(0, 2).toUpperCase()
-  return "?"
+  if (email) return email.slice(0, 2).toUpperCase();
+  return "?";
 }
 
 function StatusBadge({ status }: { status: ClaimStatus }) {
@@ -130,7 +130,7 @@ function StatusBadge({ status }: { status: ClaimStatus }) {
       >
         Pending
       </Badge>
-    )
+    );
   }
   if (status === "under_review") {
     return (
@@ -140,7 +140,7 @@ function StatusBadge({ status }: { status: ClaimStatus }) {
       >
         Under review
       </Badge>
-    )
+    );
   }
   if (status === "approved") {
     return (
@@ -150,7 +150,7 @@ function StatusBadge({ status }: { status: ClaimStatus }) {
       >
         Approved
       </Badge>
-    )
+    );
   }
   if (status === "rejected") {
     return (
@@ -160,80 +160,79 @@ function StatusBadge({ status }: { status: ClaimStatus }) {
       >
         Rejected
       </Badge>
-    )
+    );
   }
   return (
     <Badge variant="outline" className="text-muted-foreground">
       Withdrawn
     </Badge>
-  )
+  );
 }
 
 function ClaimActions({ claim }: { claim: ClaimRow }) {
-  const router = useRouter()
-  const [isPending, startTransition] = React.useTransition()
-  const [dialogOpen, setDialogOpen] = React.useState(false)
-  const [dialogType, setDialogType] = React.useState<"approve" | "reject" | null>(null)
-  const [rejectionReason, setRejectionReason] = React.useState("")
+  const router = useRouter();
+  const [isPending, startTransition] = React.useTransition();
+  const [dialogOpen, setDialogOpen] = React.useState(false);
+  const [dialogType, setDialogType] = React.useState<
+    "approve" | "reject" | null
+  >(null);
+  const [rejectionReason, setRejectionReason] = React.useState("");
 
   function handleMarkUnderReview() {
     startTransition(async () => {
       try {
-        await markUnderReviewAction(claim.id)
-        toast.success("Claim marked as under review")
+        await markUnderReviewAction(claim.id);
+        toast.success("Claim marked as under review");
       } catch (error) {
-        const message = error instanceof Error
-          ? error.message
-          : "Failed to update claim"
-        toast.error(message)
+        const message =
+          error instanceof Error ? error.message : "Failed to update claim";
+        toast.error(message);
       }
-    })
+    });
   }
 
   function handleApprove() {
     startTransition(async () => {
       try {
-        await approveClaimAction(claim.id)
-        toast.success("Claim approved")
+        await approveClaimAction(claim.id);
+        toast.success("Claim approved");
       } catch (error) {
-        const message = error instanceof Error
-          ? error.message
-          : "Failed to approve claim"
-        toast.error(message)
+        const message =
+          error instanceof Error ? error.message : "Failed to approve claim";
+        toast.error(message);
       }
-    })
+    });
   }
 
   function handleReject() {
-    const reason = rejectionReason.trim()
-    if (!reason) return
+    const reason = rejectionReason.trim();
+    if (!reason) return;
 
     startTransition(async () => {
       try {
-        await rejectClaimAction(claim.id, reason)
-        toast.success("Claim rejected")
-        setDialogOpen(false)
-        setDialogType(null)
-        setRejectionReason("")
+        await rejectClaimAction(claim.id, reason);
+        toast.success("Claim rejected");
+        setDialogOpen(false);
+        setDialogType(null);
+        setRejectionReason("");
       } catch (error) {
-        const message = error instanceof Error
-          ? error.message
-          : "Failed to reject claim"
-        toast.error(message)
+        const message =
+          error instanceof Error ? error.message : "Failed to reject claim";
+        toast.error(message);
       }
-    })
+    });
   }
 
-  const isReject = dialogType === "reject"
+  const isReject = dialogType === "reject";
 
   return (
     <AlertDialog
       open={dialogOpen}
       onOpenChange={(open) => {
-        setDialogOpen(open)
+        setDialogOpen(open);
         if (!open) {
-          setDialogType(null)
-          setRejectionReason("")
+          setDialogType(null);
+          setRejectionReason("");
         }
       }}
     >
@@ -254,9 +253,9 @@ function ClaimActions({ claim }: { claim: ClaimRow }) {
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onSelect={(event) => {
-              event.preventDefault()
-              setDialogType("approve")
-              setDialogOpen(true)
+              event.preventDefault();
+              setDialogType("approve");
+              setDialogOpen(true);
             }}
             disabled={isPending}
           >
@@ -265,9 +264,9 @@ function ClaimActions({ claim }: { claim: ClaimRow }) {
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={(event) => {
-              event.preventDefault()
-              setDialogType("reject")
-              setDialogOpen(true)
+              event.preventDefault();
+              setDialogType("reject");
+              setDialogOpen(true);
             }}
             disabled={isPending}
           >
@@ -321,7 +320,7 @@ function ClaimActions({ claim }: { claim: ClaimRow }) {
         </AlertDialogContent>
       )}
     </AlertDialog>
-  )
+  );
 }
 
 export function ClaimsListClient({
@@ -330,52 +329,52 @@ export function ClaimsListClient({
   total,
   totalPages,
 }: {
-  claims: ClaimRow[]
-  page: number
-  total: number
-  totalPages: number
+  claims: ClaimRow[];
+  page: number;
+  total: number;
+  totalPages: number;
 }) {
-  const router = useRouter()
-  const params = useSearchParams()
-  const pageSize = 20
+  const router = useRouter();
+  const params = useSearchParams();
+  const pageSize = 20;
 
   function pushWithParams(nextParams: URLSearchParams) {
-    const query = nextParams.toString()
-    router.push(query ? `/admin/claims?${query}` : "/admin/claims")
+    const query = nextParams.toString();
+    router.push(query ? `/admin/claims?${query}` : "/admin/claims");
   }
 
   function updateFilterParam(key: string, value: string) {
-    const p = new URLSearchParams(params.toString())
+    const p = new URLSearchParams(params.toString());
     if (value && value !== "all") {
-      p.set(key, value)
+      p.set(key, value);
     } else {
-      p.delete(key)
+      p.delete(key);
     }
-    p.set("page", "1")
-    pushWithParams(p)
+    p.set("page", "1");
+    pushWithParams(p);
   }
 
   function handleSearch(value: string) {
-    updateFilterParam("search", value)
+    updateFilterParam("search", value);
   }
 
   function handleStatus(value: string) {
-    updateFilterParam("status", value)
+    updateFilterParam("status", value);
   }
 
   function handlePage(nextPage: number) {
-    const p = new URLSearchParams(params.toString())
+    const p = new URLSearchParams(params.toString());
     if (nextPage <= 1) {
-      p.delete("page")
+      p.delete("page");
     } else {
-      p.set("page", String(nextPage))
+      p.set("page", String(nextPage));
     }
-    pushWithParams(p)
+    pushWithParams(p);
   }
 
-  const hasResults = claims.length > 0
-  const startItem = hasResults ? (page - 1) * pageSize + 1 : 0
-  const endItem = hasResults ? startItem + claims.length - 1 : 0
+  const hasResults = claims.length > 0;
+  const startItem = hasResults ? (page - 1) * pageSize + 1 : 0;
+  const endItem = hasResults ? startItem + claims.length - 1 : 0;
 
   return (
     <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 px-4 py-6 lg:px-6">
@@ -434,11 +433,11 @@ export function ClaimsListClient({
         </TableHeader>
         <TableBody>
           {claims.map((claim) => {
-            const cafe = claim.cafes
-            const claimant = claim.profiles
+            const cafe = claim.cafes;
+            const claimant = claim.profiles;
             const location = [cafe?.address, cafe?.neighborhood, cafe?.city]
               .filter(Boolean)
-              .join(", ")
+              .join(", ");
             return (
               <TableRow key={claim.id}>
                 <TableCell>
@@ -446,11 +445,16 @@ export function ClaimsListClient({
                     {cafe?.featured_image_url ? (
                       <div
                         className="size-10 rounded-md bg-muted shrink-0 bg-cover bg-center"
-                        style={{ backgroundImage: `url(${cafe.featured_image_url})` }}
+                        style={{
+                          backgroundImage: `url(${cafe.featured_image_url})`,
+                        }}
                         aria-hidden="true"
                       />
                     ) : (
-                      <div className="size-10 rounded-md bg-muted shrink-0" aria-hidden="true" />
+                      <div
+                        className="size-10 rounded-md bg-muted shrink-0"
+                        aria-hidden="true"
+                      />
                     )}
                     <div className="flex flex-col">
                       <Link
@@ -470,7 +474,10 @@ export function ClaimsListClient({
                     <Avatar className="size-8">
                       <AvatarImage src={claimant?.avatar_url ?? ""} />
                       <AvatarFallback>
-                        {getInitials(claimant?.full_name ?? null, claimant?.email ?? null)}
+                        {getInitials(
+                          claimant?.full_name ?? null,
+                          claimant?.email ?? null,
+                        )}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex flex-col">
@@ -504,11 +511,14 @@ export function ClaimsListClient({
                   <ClaimActions claim={claim} />
                 </TableCell>
               </TableRow>
-            )
+            );
           })}
           {!hasResults && (
             <TableRow>
-              <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+              <TableCell
+                colSpan={7}
+                className="text-center text-muted-foreground py-8"
+              >
                 No claims found for the current filters.
               </TableCell>
             </TableRow>
@@ -543,5 +553,5 @@ export function ClaimsListClient({
         </div>
       </div>
     </div>
-  )
+  );
 }
