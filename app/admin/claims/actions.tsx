@@ -5,7 +5,7 @@ import { Resend } from "resend";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import CafeClaimApprovedEmail from "@/emails/CafeClaimApprovedEmail";
-import CafeClaimRejectedEmail from "@/emails/CafeClaimRefectedEmail";
+import CafeClaimRejectedEmail from "@/emails/CafeClaimRejectedEmail";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -202,12 +202,14 @@ export async function approveClaimAction(claimId: string) {
         from: "Nook <noreply@surgestudio.tech>",
         to: [ownerProfile.email],
         subject: `Your claim for ${cafeData.name} has been approved!`,
-        react: CafeClaimApprovedEmail({
-          ownerName: ownerProfile.full_name ?? "there",
-          cafeName: cafeData.name,
-          email: ownerProfile.email,
-          dashboardUrl: "https://business.nookapp.ph/owner/dashboard",
-        }),
+        react: (
+          <CafeClaimApprovedEmail
+            ownerName={ownerProfile.full_name ?? "there"}
+            cafeName={cafeData.name}
+            email={ownerProfile.email}
+            dashboardUrl="https://business.nookapp.ph/owner/dashboard"
+          />
+        ),
       });
 
       if (emailError) {
@@ -289,12 +291,14 @@ export async function rejectClaimAction(
         from: "Nook <noreply@surgestudio.tech>",
         to: [ownerProfile.email],
         subject: `Your claim for ${cafeData.name} could not be approved`,
-        react: CafeClaimRejectedEmail({
-          ownerName: ownerProfile.full_name ?? "there",
-          cafeName: cafeData.name,
-          rejectionReason: rejectionReason.trim(),
-          email: ownerProfile.email,
-        }),
+        react: (
+          <CafeClaimRejectedEmail
+            ownerName={ownerProfile.full_name ?? "there"}
+            cafeName={cafeData.name}
+            rejectionReason={rejectionReason.trim()}
+            email={ownerProfile.email}
+          />
+        ),
       });
 
       if (emailError) {

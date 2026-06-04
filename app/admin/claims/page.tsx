@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import type { Metadata } from "next"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { ClaimsListClient, type ClaimRow, type ClaimStatus } from "@/app/admin/claims/components/claims-list-client"
@@ -114,11 +115,13 @@ export default async function ClaimsPage({
   const totalPages = total > 0 ? Math.ceil(total / pageSize) : 0
 
   return (
-    <ClaimsListClient
-      claims={(dataResult.data ?? []) as unknown as ClaimRow[]}
-      page={safePage}
-      total={total}
-      totalPages={totalPages}
-    />
+    <Suspense fallback={<div className="p-8 text-center text-muted-foreground">Loading claims...</div>}>
+      <ClaimsListClient
+        claims={(dataResult.data ?? []) as unknown as ClaimRow[]}
+        page={safePage}
+        total={total}
+        totalPages={totalPages}
+      />
+    </Suspense>
   )
 }
