@@ -193,13 +193,11 @@ function ClaimActions({ claim }: { claim: ClaimRow }) {
 
   function handleApprove() {
     startTransition(async () => {
-      try {
-        await approveClaimAction(claim.id);
+      const result = await approveClaimAction(claim.id);
+      if (result.success) {
         toast.success("Claim approved");
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to approve claim";
-        toast.error(message);
+      } else {
+        toast.error(result.error ?? "Failed to approve claim");
       }
     });
   }

@@ -97,114 +97,150 @@ export async function markUnderReviewAction(claimId: string) {
 }
 
 export async function approveClaimAction(claimId: string) {
-  const supabase = await createClient();
-  const actorId = await requireSuperadminId(supabase);
+  try {
+    const supabase = await createClient();
+    const supabaseAdmin = createAdminClient();
 
-  // 1. Fetch claim
-  const { data: claim, error: claimError } = await supabase
-    .from("cafe_claims")
-    .select("id, cafe_id, claimant_id, role")
-    .eq("id", claimId)
-    .single();
-
-  if (claimError || !claim) throw new Error("Claim not found");
-
-  const now = new Date().toISOString();
-
-  // 2. Mark claim approved
-  const { error: claimUpdateError } = await supabase
-    .from("cafe_claims")
-    .update({
-      status: "approved",
-      reviewed_by: actorId,
-      reviewed_at: now,
-      updated_at: now,
-    })
-    .eq("id", claimId);
-
-  if (claimUpdateError) throw claimUpdateError;
-
-  // 3. Set auth metadata
-  const { error: metaError } =
-    await createAdminClient().auth.admin.updateUserById(claim.claimant_id, {
-      app_metadata: { role: "cafe_owner", cafe_id: claim.cafe_id },
-    });
-
-  if (metaError) throw metaError;
-
-  // 4. Create owner–cafe link
-  const { error: linkError } = await supabase.from("cafe_owner_cafe").insert({
-    owner_id: claim.claimant_id,
-    cafe_id: claim.cafe_id,
-    role: claim.role ?? "owner",
-  });
-
-  if (linkError) throw linkError;
-
-  // 5. Mark cafe as claimed
-  const { data: cafeData, error: cafeError } = await supabase
-    .from("cafes")
-    .update({ is_claimed: true, claimed_at: now })
-    .eq("id", claim.cafe_id)
-    .select("name")
-    .single();
-
-  if (cafeError) throw cafeError;
-
-  // 6. Audit log (non-fatal)
-  await insertAuditLog({
-    supabase,
-    actorId,
-    action: "claim_approved",
-    targetId: claimId,
-    metadata: {
-      cafe_id: claim.cafe_id,
-      claimant_id: claim.claimant_id,
-      role: "cafe_owner",
-    },
-  });
-
-  // 7. Send approval email (non-fatal)
-  const { data: ownerProfile } = await supabase
-    .from("profiles")
-    .select("full_name, email")
-    .eq("id", claim.claimant_id)
-    .single();
-
-  if (ownerProfile?.email && cafeData?.name) {
-    const { data: emailData, error: emailError } = await resend.emails.send({
-      from: "Nook <noreply@surgestudio.tech>",
-      to: [ownerProfile.email],
-      subject: `Your claim for ${cafeData.name} has been approved!`,
-      react: CafeClaimApprovedEmail({
-        ownerName: ownerProfile.full_name ?? "there",
-        cafeName: cafeData.name,
-        email: ownerProfile.email,
-        dashboardUrl: "https://business.nookapp.ph/owner/dashboard",
-      }),
-    });
-
-    if (emailError) {
-      console.error("[EMAIL] Failed to send approval email:", {
-        name: emailError.name,
-        message: emailError.message,
-      });
-    } else {
-      console.log(
-        "[EMAIL] Approval email sent:",
-        emailData?.id,
-        "→",
-        ownerProfile.email,
-      );
+    let actorId: string;
+    try {
+      actorId = await requireSuperadminId(supabase);
+    } catch {
+      return {
+        success: false as const,
+        error: "Authentication failed",
+      };
     }
-  } else {
-    console.warn("[EMAIL] Skipped — missing owner email or cafe name", {
-      email: ownerProfile?.email,
-      cafeName: cafeData?.name,
-    });
-  }
 
-  revalidatePath("/admin/claims");
+    // 1. Fetch claim
+    const { data: claim, error: claimError } = await supabase
+      .from("cafe_claims")
+      .select("id, cafe_id, claimant_id, role")
+      .eq("id", claimId)
+      .single();
+
+    if (claimError || !claim) {
+      return { success: false as const, error: "Claim not found" };
+    }
+
+    const now = new Date().toISOString();
+
+    // 2. Mark claim approved
+    const { error: claimUpdateError } = await supabase
+      .from("cafe_claims")
+      .update({
+        status: "approved",
+        reviewed_by: actorId,
+        reviewed_at: now,
+        updated_at: now,
+      })
+      .eq("id", claimId);
+
+    if (claimUpdateError) {
+      return { success: false as const, error: "Failed to update claim" };
+    }
+
+    // 3. Set auth metadata
+    const { error: metaError } =
+      await supabaseAdmin.auth.admin.updateUserById(claim.claimant_id, {
+        app_metadata: { role: "cafe_owner", cafe_id: claim.cafe_id },
+      });
+
+    if (metaError) {
+      return { success: false as const, error: "Failed to update user role" };
+    }
+
+    // 4. Create owner–cafe link (uses admin client to bypass RLS)
+    const { error: linkError } = await supabaseAdmin
+      .from("cafe_owner_cafe")
+      .insert({
+        owner_id: claim.claimant_id,
+        cafe_id: claim.cafe_id,
+        role: claim.role ?? "owner",
+      });
+
+    if (linkError) {
+      return {
+        success: false as const,
+        error: "Failed to create owner–cafe link",
+      };
+    }
+
+    // 5. Mark cafe as claimed (uses admin client to bypass RLS)
+    const { data: cafeData, error: cafeError } = await supabaseAdmin
+      .from("cafes")
+      .update({ is_claimed: true, claimed_at: now })
+      .eq("id", claim.cafe_id)
+      .select("name")
+      .single();
+
+    if (cafeError) {
+      return { success: false as const, error: "Failed to update cafe" };
+    }
+
+    // 6. Audit log (non-fatal)
+    await insertAuditLog({
+      supabase,
+      actorId,
+      action: "claim_approved",
+      targetId: claimId,
+      metadata: {
+        cafe_id: claim.cafe_id,
+        claimant_id: claim.claimant_id,
+        role: "cafe_owner",
+      },
+    });
+
+    // 7. Send approval email (non-fatal)
+    const { data: ownerProfile } = await supabase
+      .from("profiles")
+      .select("full_name, email")
+      .eq("id", claim.claimant_id)
+      .single();
+
+    if (ownerProfile?.email && cafeData?.name) {
+      const { data: emailData, error: emailError } = await resend.emails.send({
+        from: "Nook <noreply@surgestudio.tech>",
+        to: [ownerProfile.email],
+        subject: `Your claim for ${cafeData.name} has been approved!`,
+        react: CafeClaimApprovedEmail({
+          ownerName: ownerProfile.full_name ?? "there",
+          cafeName: cafeData.name,
+          email: ownerProfile.email,
+          dashboardUrl: "https://business.nookapp.ph/owner/dashboard",
+        }),
+      });
+
+      if (emailError) {
+        console.error("[EMAIL] Failed to send approval email:", {
+          name: emailError.name,
+          message: emailError.message,
+        });
+      } else {
+        console.log(
+          "[EMAIL] Approval email sent:",
+          emailData?.id,
+          "→",
+          ownerProfile.email,
+        );
+      }
+    } else {
+      console.warn("[EMAIL] Skipped — missing owner email or cafe name", {
+        email: ownerProfile?.email,
+        cafeName: cafeData?.name,
+      });
+    }
+
+    revalidatePath("/admin/claims");
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false as const,
+      error:
+        error instanceof Error
+          ? error.message
+          : "An unexpected error occurred",
+    };
+  }
 }
 
 export async function rejectClaimAction(
