@@ -1884,14 +1884,13 @@ export function CafeEditorForm({
       { label: "Cafe name", value: name },
       { label: "Neighborhood", value: neighborhood },
       { label: "City", value: city },
-      { label: "Description", value: description },
       { label: "Address", value: addressInput },
     ]
 
     return checks
       .filter((field) => field.value.trim().length === 0)
       .map((field) => field.label)
-  }, [addressInput, city, description, name, neighborhood])
+  }, [addressInput, city, name, neighborhood])
 
   const hasMissingRequiredFields = missingRequiredFields.length > 0
 
