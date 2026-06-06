@@ -44,10 +44,7 @@ export function MapPicker({ lat, lng, onChange, disabled }: Props) {
     marker.current.on("dragend", () => {
       if (!marker.current) return
       const lngLat = marker.current.getLngLat()
-      onChange(
-        parseFloat(lngLat.lat.toFixed(6)),
-        parseFloat(lngLat.lng.toFixed(6))
-      )
+      onChange(lngLat.lat, lngLat.lng)
     })
 
     // On map click — move marker to clicked position
@@ -55,10 +52,7 @@ export function MapPicker({ lat, lng, onChange, disabled }: Props) {
       map.current.on("click", (e) => {
         if (!marker.current) return
         marker.current.setLngLat(e.lngLat)
-        onChange(
-          parseFloat(e.lngLat.lat.toFixed(6)),
-          parseFloat(e.lngLat.lng.toFixed(6))
-        )
+        onChange(e.lngLat.lat, e.lngLat.lng)
       })
     }
 

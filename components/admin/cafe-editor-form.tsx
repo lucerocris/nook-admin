@@ -1504,17 +1504,17 @@ export function CafeEditorForm({
   const [lat, setLat] = React.useState<number>(cafe?.lat ?? 10.3157)
   const [lng, setLng] = React.useState<number>(cafe?.lng ?? 123.8854)
   const [latInput, setLatInput] = React.useState(
-    (cafe?.lat ?? 10.3157).toFixed(6)
+    String(cafe?.lat ?? 10.3157)
   )
   const [lngInput, setLngInput] = React.useState(
-    (cafe?.lng ?? 123.8854).toFixed(6)
+    String(cafe?.lng ?? 123.8854)
   )
 
   const syncCoordinates = React.useCallback((newLat: number, newLng: number) => {
     setLat(newLat)
     setLng(newLng)
-    setLatInput(newLat.toFixed(6))
-    setLngInput(newLng.toFixed(6))
+    setLatInput(String(newLat))
+    setLngInput(String(newLng))
   }, [])
 
   const handleMapChange = React.useCallback((newLat: number, newLng: number) => {
@@ -1543,20 +1543,20 @@ export function CafeEditorForm({
     const parsed = Number(latInput)
     if (Number.isFinite(parsed) && parsed >= -90 && parsed <= 90) {
       setLat(parsed)
-      setLatInput(parsed.toFixed(6))
+      setLatInput(String(parsed))
       return
     }
-    setLatInput(lat.toFixed(6))
+    setLatInput(String(lat))
   }
 
   function commitLngInput() {
     const parsed = Number(lngInput)
     if (Number.isFinite(parsed) && parsed >= -180 && parsed <= 180) {
       setLng(parsed)
-      setLngInput(parsed.toFixed(6))
+      setLngInput(String(parsed))
       return
     }
-    setLngInput(lng.toFixed(6))
+    setLngInput(String(lng))
   }
 
   // --- Social Links ---
@@ -2120,10 +2120,7 @@ export function CafeEditorForm({
                           feature.properties.name ??
                           ""
                         )
-                        syncCoordinates(
-                          parseFloat(retrievedLat.toFixed(6)),
-                          parseFloat(retrievedLng.toFixed(6))
-                        )
+                        syncCoordinates(retrievedLat, retrievedLng)
                       }}
                       options={{
                         country: "PH",
