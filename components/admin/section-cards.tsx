@@ -1,7 +1,9 @@
 "use client"
 
+import Link from "next/link"
 import {
   ChatCircle,
+  Flag,
   IdentificationBadge,
   Storefront,
   Users,
@@ -24,6 +26,7 @@ type Stats = {
   reviewsThisWeek: number
   activeOwners: number
   unclaimedCafes: number
+  pendingReports: number
 }
 
 export function SectionCards({ stats }: { stats: Stats }) {
@@ -69,6 +72,35 @@ export function SectionCards({ stats }: { stats: Stats }) {
           </div>
           <div className="text-muted-foreground">
             Needs an owner account created
+          </div>
+        </CardFooter>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardDescription>Pending Reports</CardDescription>
+          <CardTitle className="text-2xl font-semibold tabular-nums sm:text-3xl">
+            {stats.pendingReports}
+          </CardTitle>
+          <CardAction>
+            <Badge variant="destructive">
+              <Flag />
+              {stats.pendingReports}
+            </Badge>
+          </CardAction>
+        </CardHeader>
+        <CardFooter className="flex-col items-start gap-1.5 text-sm">
+          <div className="line-clamp-1 flex gap-2 font-medium">
+            Reports awaiting moderator action{" "}
+            <Flag className="size-4" />
+          </div>
+          <div className="text-muted-foreground">
+            <Link
+              href="/admin/reviews?status=pending&sort=oldest"
+              className="font-medium text-foreground hover:underline underline-offset-2"
+            >
+              Open the queue →
+            </Link>
           </div>
         </CardFooter>
       </Card>

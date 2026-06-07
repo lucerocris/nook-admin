@@ -47,8 +47,12 @@ const navItems: NavItem[] = [
 
 export function AdminSidebar({
   pendingClaimsCount = 0,
+  pendingReportsCount = 0,
   ...props
-}: React.ComponentProps<typeof Sidebar> & { pendingClaimsCount?: number }) {
+}: React.ComponentProps<typeof Sidebar> & {
+  pendingClaimsCount?: number
+  pendingReportsCount?: number
+}) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
@@ -97,6 +101,8 @@ export function AdminSidebar({
                 pathname === item.url || pathname.startsWith(item.url + "/")
               const showClaimsBadge =
                 item.title === "Claims" && pendingClaimsCount > 0
+              const showReportsBadge =
+                item.title === "Reviews" && pendingReportsCount > 0
               return (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={isActive} tooltip={item.title}>
@@ -107,6 +113,9 @@ export function AdminSidebar({
                   </SidebarMenuButton>
                   {showClaimsBadge && (
                     <SidebarMenuBadge>{pendingClaimsCount}</SidebarMenuBadge>
+                  )}
+                  {showReportsBadge && (
+                    <SidebarMenuBadge>{pendingReportsCount}</SidebarMenuBadge>
                   )}
                 </SidebarMenuItem>
               )
