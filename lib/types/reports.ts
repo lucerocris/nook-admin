@@ -6,17 +6,44 @@ export type ReportStatus =
 
 export type ReviewStatus = "visible" | "hidden" | "removed"
 
+// Reason codes are stored in the DB as `reason_code` on review_reports and
+// constrained to the values defined in the schema. The list below must stay
+// in lockstep with the CHECK constraint on that column.
 export type ReportReason =
   | "spam"
-  | "off_topic"
+  | "fake_review"
   | "harassment"
   | "hate_speech"
-  | "false_information"
-  | "inappropriate"
+  | "off_topic"
   | "conflict_of_interest"
+  | "impersonation"
+  | "privacy_violation"
+  | "inappropriate_content"
   | "other"
 
-export type ModerationActionType =
+// DB action enum on review_moderation_actions. The `under_review` value
+// was added in migration 20260607120000_moderation_actions.sql to cover
+// the "mark under review" audit event.
+export type ModerationActionTypeDb =
+  | "hide"
+  | "restore"
+  | "remove"
+  | "warn_user"
+  | "suspend_user"
+  | "under_review"
+
+// Resolution type stored on review_reports after a terminal decision.
+export type ReportResolutionType =
+  | "valid_report"
+  | "invalid_report"
+  | "insufficient_evidence"
+  | "owner_abuse"
+  | null
+
+// UI-facing event types. The DTO mapper converts DB action values to these
+// (e.g. action="hide" → event.type="hidden"). `submitted` and the implicit
+// terminal events are synthesized at the DTO boundary, not stored.
+export type ModerationEventType =
   | "submitted"
   | "marked_under_review"
   | "hidden"
@@ -75,7 +102,7 @@ export type ReportEvidence = {
 
 export type ModerationEvent = {
   id: string
-  type: ModerationActionType
+  type: ModerationEventType
   label: string
   description: string | null
   created_at: string

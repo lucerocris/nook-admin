@@ -39,6 +39,16 @@ import type {
   ReviewStatus,
 } from "@/lib/types/reports"
 import { cn } from "@/lib/utils"
+import {
+  hideReviewAction,
+  markUnderReviewAction,
+  rejectReportAction,
+  removeReviewAction,
+  resolveReportAction,
+  restoreReviewAction,
+  suspendUserAction,
+  warnUserAction,
+} from "@/app/admin/reviews/actions"
 
 type ActionKey =
   | "hide"
@@ -53,16 +63,6 @@ type DialogState = {
   action: ActionKey
   note: string
 } | null
-
-const ACTION_LABELS: Record<ActionKey, string> = {
-  hide: "Hide review",
-  remove: "Remove review",
-  restore: "Restore review",
-  reject: "Reject report",
-  warn: "Warn user",
-  suspend: "Suspend user",
-  resolve: "Resolve report",
-}
 
 interface ModerationActionsProps {
   reportId: string
@@ -92,30 +92,58 @@ export function ModerationActions({
 
   function handleConfirm() {
     if (!dialog) return
-    startTransition(() => {
-      const label = ACTION_LABELS[dialog.action]
-      const description = dialog.note.trim() || undefined
-      const messages: Record<ActionKey, string> = {
-        hide: "Review hidden",
-        remove: "Review removed",
-        restore: "Review restored",
-        reject: "Report rejected",
-        warn: "Warning sent",
-        suspend: "User suspended",
-        resolve: "Report resolved",
+    const note = dialog.note.trim() || undefined
+    const messages: Record<ActionKey, string> = {
+      hide: "Review hidden",
+      remove: "Review removed",
+      restore: "Review restored",
+      reject: "Report rejected",
+      warn: "Warning sent",
+      suspend: "User suspended",
+      resolve: "Report resolved",
+    }
+
+    startTransition(async () => {
+      let result
+      switch (dialog.action) {
+        case "hide":
+          result = await hideReviewAction(reportId, note)
+          break
+        case "remove":
+          result = await removeReviewAction(reportId, note)
+          break
+        case "restore":
+          result = await restoreReviewAction(reportId, note)
+          break
+        case "reject":
+          result = await rejectReportAction(reportId, dialog.note.trim())
+          break
+        case "warn":
+          result = await warnUserAction(reportId, dialog.note.trim())
+          break
+        case "suspend":
+          result = await suspendUserAction(reportId, dialog.note.trim())
+          break
+        case "resolve":
+          result = await resolveReportAction(reportId, note)
+          break
       }
-      console.log("[mock] moderation action", {
-        reportId,
-        action: dialog.action,
-        description,
-      })
-      toast.success(messages[dialog.action], {
-        description: description
-          ? `“${description.slice(0, 80)}${description.length > 80 ? "…" : ""}”`
-          : `Action recorded for report ${reportId}`,
-      })
-      setDialog(null)
-      router.refresh()
+
+      if (!result) return
+
+      if (result.success) {
+        toast.success(messages[dialog.action], {
+          description: note
+            ? `“${note.slice(0, 80)}${note.length > 80 ? "…" : ""}”`
+            : `Action recorded for report ${reportId}`,
+        })
+        setDialog(null)
+        router.refresh()
+      } else {
+        toast.error(messages[dialog.action], {
+          description: result.error,
+        })
+      }
     })
   }
 
@@ -217,10 +245,18 @@ export function ModerationActions({
                   isPending || reportStatus !== "pending"
                 }
                 onClick={() => {
-                  startTransition(() => {
-                    console.log("[mock] mark under review", reportId)
-                    toast.success("Marked under review")
-                    router.refresh()
+                  startTransition(async () => {
+                    const result = await markUnderReviewAction(reportId)
+                    if (result.success) {
+                      toast.success("Marked under review", {
+                        description: `Action recorded for report ${reportId}`,
+                      })
+                      router.refresh()
+                    } else {
+                      toast.error("Could not mark under review", {
+                        description: result.error,
+                      })
+                    }
                   })
                 }}
               >

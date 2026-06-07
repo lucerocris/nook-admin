@@ -32,6 +32,8 @@ import { ReportStatusBadge } from "@/components/admin/report-status-badge"
 import { getReasonLabel } from "@/lib/queries/reports"
 import type { ReportRow } from "@/lib/types/reports"
 import { cn } from "@/lib/utils"
+import { markUnderReviewAction } from "@/app/admin/reviews/actions"
+import { toast } from "sonner"
 
 const PAGE_SIZE = 20
 
@@ -142,14 +144,38 @@ function ReportCell({ report }: { report: ReportRow }) {
 }
 
 function ReportRowActions({ report }: { report: ReportRow }) {
+  const router = useRouter()
+  const [isPending, startTransition] = React.useTransition()
+
+  function handleMarkUnderReview() {
+    startTransition(async () => {
+      const result = await markUnderReviewAction(report.id)
+      if (result.success) {
+        toast.success("Marked under review", {
+          description: `Report ${report.short_id} is now being investigated.`,
+        })
+        router.refresh()
+      } else {
+        toast.error("Could not mark under review", {
+          description: result.error,
+        })
+      }
+    })
+  }
+
   return (
     <div className="flex items-center justify-end gap-2">
       <Button
         variant="ghost"
         size="icon"
-        disabled={report.status === "under_review"}
+        disabled={isPending || report.status === "under_review"}
         title="Mark as under review"
         aria-label="Mark as under review"
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          handleMarkUnderReview()
+        }}
       >
         <ClockIcon />
       </Button>
