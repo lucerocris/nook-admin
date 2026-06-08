@@ -31,73 +31,188 @@ import {
   CommandList,
 } from "@/components/ui/command"
 import { cn } from "@/lib/utils"
-import { MOCK_USERS, MOCK_STAMPS } from "@/components/admin/crawls/stamps-mock-data"
-import type { MockCrawlStop } from "@/components/admin/crawls/mock-data"
+import type { StopOption, StampLogEntry, ProfileSearchResult } from "@/lib/types/crawls"
+import { searchProfilesAction, checkDuplicateStampAction } from "@/app/admin/crawls/actions"
+import { createClient } from "@/lib/supabase/client"
 
 export function GrantManualStampDialog({
   open,
   onOpenChange,
-  stops,
+  crawlId,
+  stopOptions,
+  onGrant,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  stops: MockCrawlStop[]
+  crawlId: string
+  stopOptions: StopOption[]
+  onGrant: (stamp: StampLogEntry) => void
 }) {
   const [selectedUserId, setSelectedUserId] = React.useState<string | null>(null)
   const [selectedStopId, setSelectedStopId] = React.useState<string | null>(null)
   const [verificationNote, setVerificationNote] = React.useState("")
   const [successState, setSuccessState] = React.useState<{
     username: string
-    tierName: string
+    tierName: string | null
   } | null>(null)
+  const [error, setError] = React.useState<string | null>(null)
+  const [submitting, setSubmitting] = React.useState(false)
 
   const [userSearchOpen, setUserSearchOpen] = React.useState(false)
   const [stopSearchOpen, setStopSearchOpen] = React.useState(false)
 
-  const selectedUser = MOCK_USERS.find((u) => u.id === selectedUserId)
-  const selectedStop = stops.find((s) => s.id === selectedStopId)
+  const [searchResults, setSearchResults] = React.useState<ProfileSearchResult[]>([])
+  const [searchQuery, setSearchQuery] = React.useState("")
+  const [searching, setSearching] = React.useState(false)
+
+  const [duplicateWarning, setDuplicateWarning] = React.useState<{
+    id: string
+    claimed_at: string
+  } | null>(null)
+  const [checkingDuplicate, setCheckingDuplicate] = React.useState(false)
+
+  const selectedUser = searchResults.find((u) => u.id === selectedUserId) ?? null
+  const selectedStop = stopOptions.find((s) => s.id === selectedStopId) ?? null
 
   const MIN_NOTE_LENGTH = 15
-
-  const duplicateStamp = React.useMemo(() => {
-    if (!selectedUserId || !selectedStopId) return null
-    return (
-      MOCK_STAMPS.find(
-        (s) => s.user_id === selectedUserId && s.stop_id === selectedStopId
-      ) ?? null
-    )
-  }, [selectedUserId, selectedStopId])
 
   const isFormValid =
     selectedUserId &&
     selectedStopId &&
     verificationNote.trim().length >= MIN_NOTE_LENGTH &&
-    !duplicateStamp
+    !duplicateWarning
+
+  const debounceRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  function handleSearchInput(value: string) {
+    setSearchQuery(value)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (!value.trim()) {
+      setSearchResults([])
+      return
+    }
+    setSearching(true)
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const results = await searchProfilesAction(value.trim())
+        setSearchResults(results)
+      } catch {
+        setSearchResults([])
+      } finally {
+        setSearching(false)
+      }
+    }, 300)
+  }
+
+  React.useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [])
+
+  React.useEffect(() => {
+    if (selectedUserId && selectedStopId) {
+      setCheckingDuplicate(true)
+      setDuplicateWarning(null)
+      checkDuplicateStampAction(selectedStopId, selectedUserId)
+        .then((result) => {
+          setDuplicateWarning(result)
+        })
+        .catch(() => {
+          setDuplicateWarning(null)
+        })
+        .finally(() => {
+          setCheckingDuplicate(false)
+        })
+    } else {
+      setDuplicateWarning(null)
+    }
+  }, [selectedUserId, selectedStopId])
 
   function resetForm() {
     setSelectedUserId(null)
     setSelectedStopId(null)
     setVerificationNote("")
     setSuccessState(null)
+    setError(null)
+    setDuplicateWarning(null)
+    setSearchQuery("")
+    setSearchResults([])
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!isFormValid || !selectedUser || !selectedStop) return
-    const tierName =
-      stops.find((s) => s.id === selectedStop.id)?.tier ?? "City Explorer"
-    setSuccessState({
-      username: selectedUser.username,
-      tierName,
-    })
-    toast.success("Manual stamp granted")
+    setError(null)
+    setSubmitting(true)
+
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token
+    const adminId = session?.user.id
+
+    if (!token || !adminId) {
+      setError("Not authenticated")
+      setSubmitting(false)
+      return
+    }
+
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-grant-stamp`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            crawl_id: crawlId,
+            stop_id: selectedStopId,
+            cafe_id: selectedStop.cafe_id,
+            user_id: selectedUserId,
+            verification_note: verificationNote.trim(),
+            admin_id: adminId,
+          }),
+        },
+      )
+
+      const body = await res.json()
+
+      if (!res.ok) {
+        setError(body.error ?? "Failed to grant stamp")
+        setSubmitting(false)
+        return
+      }
+
+      const newStamp: StampLogEntry = {
+        ...body.stamp,
+        username: selectedUser.username,
+        avatar_url: selectedUser.avatar_url,
+        cafe_name: selectedStop.cafe_name,
+        cafe_lat: 0,
+        cafe_lng: 0,
+        stop_order: selectedStop.stop_order,
+        stop_label: selectedStop.label,
+        tier: selectedStop.tier,
+      }
+
+      setSuccessState({
+        username: selectedUser.username,
+        tierName: body.tier_name ?? null,
+      })
+
+      onGrant(newStamp)
+      setSubmitting(false)
+    } catch {
+      setError("Something went wrong")
+      setSubmitting(false)
+    }
   }
 
   function handleClose() {
     resetForm()
     onOpenChange(false)
   }
-
-  const activeStops = stops.filter((s) => s.is_active)
 
   return (
     <Dialog
@@ -121,13 +236,19 @@ export function GrantManualStampDialog({
               <p className="text-sm font-medium">Stamp granted</p>
               <p className="text-xs text-muted-foreground">
                 Tier completion checked. @{successState.username} currently
-                holds: {successState.tierName}
+                holds: {successState.tierName ?? "No tier yet"}
               </p>
             </div>
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            {/* User selector */}
+            {error && (
+              <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+                <WarningCircle className="size-4 mt-0.5 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium">User</label>
               <Popover
@@ -141,7 +262,7 @@ export function GrantManualStampDialog({
                     aria-expanded={userSearchOpen}
                     className={cn(
                       "justify-between text-xs font-normal",
-                      !selectedUserId && "text-muted-foreground"
+                      !selectedUserId && "text-muted-foreground",
                     )}
                   >
                     {selectedUser
@@ -151,15 +272,23 @@ export function GrantManualStampDialog({
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
-                  <Command>
-                    <CommandInput placeholder="Search users..." />
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      placeholder="Search users..."
+                      value={searchQuery}
+                      onValueChange={handleSearchInput}
+                    />
                     <CommandList>
-                      <CommandEmpty>No users found.</CommandEmpty>
+                      {searching ? (
+                        <CommandEmpty>Searching...</CommandEmpty>
+                      ) : (
+                        <CommandEmpty>No users found.</CommandEmpty>
+                      )}
                       <CommandGroup>
-                        {MOCK_USERS.map((user) => (
+                        {searchResults.map((user) => (
                           <CommandItem
                             key={user.id}
-                            value={user.username}
+                            value={user.id}
                             onSelect={() => {
                               setSelectedUserId(user.id)
                               setUserSearchOpen(false)
@@ -170,7 +299,7 @@ export function GrantManualStampDialog({
                                 "size-3",
                                 selectedUserId === user.id
                                   ? "opacity-100"
-                                  : "opacity-0"
+                                  : "opacity-0",
                               )}
                             />
                             @{user.username}
@@ -183,7 +312,6 @@ export function GrantManualStampDialog({
               </Popover>
             </div>
 
-            {/* Stop selector */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium">Stop</label>
               <Popover
@@ -197,7 +325,7 @@ export function GrantManualStampDialog({
                     aria-expanded={stopSearchOpen}
                     className={cn(
                       "justify-between text-xs font-normal",
-                      !selectedStopId && "text-muted-foreground"
+                      !selectedStopId && "text-muted-foreground",
                     )}
                   >
                     {selectedStop
@@ -212,7 +340,7 @@ export function GrantManualStampDialog({
                     <CommandList>
                       <CommandEmpty>No stops found.</CommandEmpty>
                       <CommandGroup>
-                        {activeStops.map((stop) => (
+                        {stopOptions.map((stop) => (
                           <CommandItem
                             key={stop.id}
                             value={`${stop.cafe_name} ${stop.stop_order}`}
@@ -226,7 +354,7 @@ export function GrantManualStampDialog({
                                 "size-3",
                                 selectedStopId === stop.id
                                   ? "opacity-100"
-                                  : "opacity-0"
+                                  : "opacity-0",
                               )}
                             />
                             Stop {stop.stop_order} · {stop.cafe_name} (
@@ -240,7 +368,27 @@ export function GrantManualStampDialog({
               </Popover>
             </div>
 
-            {/* Verification note */}
+            {checkingDuplicate && (
+              <p className="text-xs text-muted-foreground">
+                Checking for duplicates...
+              </p>
+            )}
+            {duplicateWarning && (
+              <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950">
+                <WarningCircle className="size-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                <div className="text-xs text-amber-900 dark:text-amber-100">
+                  <p className="font-medium">Duplicate stamp detected</p>
+                  <p className="mt-1">
+                    This user already has a stamp for this stop (claimed{" "}
+                    {new Date(
+                      duplicateWarning.claimed_at,
+                    ).toLocaleDateString()}
+                    ). Granting another will fail.
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium">
                 Verification Note{" "}
@@ -261,22 +409,7 @@ export function GrantManualStampDialog({
               </p>
             </div>
 
-            {/* Duplicate warning */}
-            {duplicateStamp && (
-              <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs dark:border-amber-800 dark:bg-amber-950">
-                <WarningCircle className="size-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
-                <p className="text-amber-900 dark:text-amber-100">
-                  This user has already claimed this stop on{" "}
-                  {new Date(
-                    duplicateStamp.claimed_at
-                  ).toLocaleDateString()}
-                  . Submitting will fail.
-                </p>
-              </div>
-            )}
-
-            {/* Confirmation summary */}
-            {selectedUserId && selectedStopId && !duplicateStamp && (
+            {selectedUserId && selectedStopId && (
               <div className="rounded-lg border bg-muted/50 p-3 text-xs text-muted-foreground">
                 You are granting a manual stamp to{" "}
                 <span className="font-medium text-foreground">
@@ -299,8 +432,11 @@ export function GrantManualStampDialog({
             {successState ? "Close" : "Cancel"}
           </Button>
           {!successState && (
-            <Button disabled={!isFormValid} onClick={handleSubmit}>
-              Grant Stamp & Check Tiers
+            <Button
+              disabled={!isFormValid || submitting}
+              onClick={handleSubmit}
+            >
+              {submitting ? "Granting..." : "Grant Stamp & Check Tiers"}
             </Button>
           )}
         </DialogFooter>

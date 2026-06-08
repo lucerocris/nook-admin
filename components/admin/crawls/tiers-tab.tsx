@@ -6,6 +6,7 @@ import {
   PencilSimple,
   Trash,
   WarningCircle,
+  DotsThree,
 } from "@phosphor-icons/react"
 import { toast } from "sonner"
 
@@ -44,8 +45,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { DotsThree } from "@phosphor-icons/react"
-import type { MockCrawlTier } from "@/components/admin/crawls/mock-data"
+import type { CrawlTier, CrawlStatus } from "@/lib/types/crawls"
+import {
+  createCrawlTierAction,
+  updateCrawlTierAction,
+  deleteCrawlTierAction,
+} from "@/app/admin/crawls/actions"
 
 function slugify(text: string): string {
   return text
@@ -62,8 +67,8 @@ function TierRow({
   onEdit,
   onDelete,
 }: {
-  tier: MockCrawlTier
-  onEdit: (tier: MockCrawlTier) => void
+  tier: CrawlTier
+  onEdit: (tier: CrawlTier) => void
   onDelete: (id: string) => void
 }) {
   return (
@@ -129,13 +134,17 @@ function TierRow({
 
 export function TiersTab({
   tiers: initialTiers,
+  crawlId,
+  crawlStatus,
 }: {
-  tiers: MockCrawlTier[]
+  tiers: CrawlTier[]
+  crawlId: string
+  crawlStatus: CrawlStatus
 }) {
   const [tiers, setTiers] = React.useState(initialTiers)
   const [isPending, startTransition] = React.useTransition()
   const [addOpen, setAddOpen] = React.useState(false)
-  const [editingTier, setEditingTier] = React.useState<MockCrawlTier | null>(null)
+  const [editingTier, setEditingTier] = React.useState<CrawlTier | null>(null)
   const [deletingId, setDeletingId] = React.useState<string | null>(null)
 
   const [name, setName] = React.useState("")
@@ -146,6 +155,7 @@ export function TiersTab({
   const [requiredTags, setRequiredTags] = React.useState("")
   const [badgeUrl, setBadgeUrl] = React.useState("")
   const [slugAuto, setSlugAuto] = React.useState(true)
+  const [tierOrderError, setTierOrderError] = React.useState("")
 
   const sorted = [...tiers].sort((a, b) => a.tier_order - b.tier_order)
 
@@ -157,6 +167,8 @@ export function TiersTab({
     return false
   }, [tiers])
 
+  const isCrawlActive = crawlStatus === "active"
+
   function resetForm() {
     setName("")
     setSlug("")
@@ -166,6 +178,7 @@ export function TiersTab({
     setRequiredTags("")
     setBadgeUrl("")
     setSlugAuto(true)
+    setTierOrderError("")
   }
 
   function openAdd() {
@@ -174,16 +187,17 @@ export function TiersTab({
     setAddOpen(true)
   }
 
-  function openEdit(tier: MockCrawlTier) {
+  function openEdit(tier: CrawlTier) {
     setEditingTier(tier)
     setName(tier.name)
     setSlug(tier.slug)
-    setDescription(tier.description)
-    setCompletionCopy(tier.completion_copy)
+    setDescription(tier.description ?? "")
+    setCompletionCopy(tier.completion_copy ?? "")
     setTierOrder(String(tier.tier_order))
     setRequiredTags(tier.required_tier_tags.join(", "))
     setBadgeUrl(tier.badge_image_url ?? "")
     setSlugAuto(false)
+    setTierOrderError("")
   }
 
   function handleNameChange(value: string) {
@@ -193,47 +207,102 @@ export function TiersTab({
     }
   }
 
-  function handleSave() {
-    startTransition(async () => {
-      const tags = requiredTags
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean)
+  function validateTierOrder(): boolean {
+    const order = Number(tierOrder)
+    if (isNaN(order) || order < 1) {
+      setTierOrderError("Order must be a positive number")
+      return false
+    }
+    const duplicate = tiers.find(
+      (t) =>
+        t.tier_order === order &&
+        t.id !== editingTier?.id
+    )
+    if (duplicate) {
+      setTierOrderError(`Tier order ${order} is already in use`)
+      return false
+    }
+    setTierOrderError("")
+    return true
+  }
 
+  function parseTags(): string[] {
+    return requiredTags
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean)
+  }
+
+  function handleSave() {
+    if (!name.trim() || !slug.trim()) return
+    if (!validateTierOrder()) return
+
+    const tags = parseTags()
+
+    startTransition(async () => {
       if (editingTier) {
-        setTiers((prev) =>
-          prev.map((t) =>
-            t.id === editingTier.id
-              ? {
-                  ...t,
-                  name,
-                  slug,
-                  description,
-                  completion_copy: completionCopy,
-                  tier_order: Number(tierOrder),
-                  required_tier_tags: tags,
-                  badge_image_url: badgeUrl || null,
-                }
-              : t
-          )
-        )
-        setEditingTier(null)
-        toast.success("Tier updated")
-      } else {
-        const newTier: MockCrawlTier = {
-          id: "tier-new-" + Date.now(),
-          crawl_id: tiers[0]?.crawl_id ?? "",
-          name,
-          slug,
-          description,
-          completion_copy: completionCopy,
+        const result = await updateCrawlTierAction(editingTier.id, crawlId, {
+          name: name.trim(),
+          slug: slug.trim(),
+          description: description.trim() || null,
+          completion_copy: completionCopy.trim() || null,
           tier_order: Number(tierOrder),
           required_tier_tags: tags,
-          badge_image_url: badgeUrl || null,
+          badge_image_url: badgeUrl.trim() || null,
+        })
+
+        if (result.success) {
+          setTiers((prev) =>
+            prev.map((t) =>
+              t.id === editingTier.id
+                ? {
+                    ...t,
+                    name: name.trim(),
+                    slug: slug.trim(),
+                    description: description.trim() || null,
+                    completion_copy: completionCopy.trim() || null,
+                    tier_order: Number(tierOrder),
+                    required_tier_tags: tags,
+                    badge_image_url: badgeUrl.trim() || null,
+                  }
+                : t
+            )
+          )
+          setEditingTier(null)
+          toast.success("Tier updated")
+        } else {
+          toast.error(result.error)
         }
-        setTiers((prev) => [...prev, newTier])
-        setAddOpen(false)
-        toast.success("Tier added")
+      } else {
+        const result = await createCrawlTierAction(crawlId, {
+          name: name.trim(),
+          slug: slug.trim(),
+          description: description.trim() || null,
+          completion_copy: completionCopy.trim() || null,
+          tier_order: Number(tierOrder),
+          required_tier_tags: tags,
+          badge_image_url: badgeUrl.trim() || null,
+        })
+
+        if (result.success) {
+          const newTier: CrawlTier = {
+            id: result.id,
+            crawl_id: crawlId,
+            name: name.trim(),
+            slug: slug.trim(),
+            description: description.trim() || null,
+            completion_copy: completionCopy.trim() || null,
+            tier_order: Number(tierOrder),
+            required_tier_tags: tags,
+            badge_image_url: badgeUrl.trim() || null,
+            created_at: new Date().toISOString(),
+          }
+          setTiers((prev) => [...prev, newTier])
+          setAddOpen(false)
+          toast.success("Tier added")
+        } else {
+          toast.error(result.error)
+        }
       }
       resetForm()
     })
@@ -242,9 +311,14 @@ export function TiersTab({
   function handleDelete() {
     if (!deletingId) return
     startTransition(async () => {
-      setTiers((prev) => prev.filter((t) => t.id !== deletingId))
-      setDeletingId(null)
-      toast.success("Tier deleted")
+      const result = await deleteCrawlTierAction(deletingId)
+      if (result.success) {
+        setTiers((prev) => prev.filter((t) => t.id !== deletingId))
+        setDeletingId(null)
+        toast.success("Tier deleted")
+      } else {
+        toast.error(result.error)
+      }
     })
   }
 
@@ -275,7 +349,7 @@ export function TiersTab({
               <CardTitle className="text-sm">
                 Tiers ({tiers.length})
               </CardTitle>
-              <Button size="sm" onClick={openAdd}>
+              <Button size="sm" onClick={openAdd} disabled={isCrawlActive}>
                 <Plus />
                 Add Tier
               </Button>
@@ -305,15 +379,14 @@ export function TiersTab({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete tier?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this tier definition. Stops assigned
-              to this tier will not be affected.
+              Deleting this tier will not remove achievements already earned by users.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              disabled={isPending}
+              disabled={isPending || isCrawlActive}
               onClick={handleDelete}
             >
               Delete
@@ -377,8 +450,14 @@ export function TiersTab({
                 min={1}
                 placeholder="1"
                 value={tierOrder}
-                onChange={(e) => setTierOrder(e.target.value)}
+                onChange={(e) => {
+                  setTierOrder(e.target.value)
+                  setTierOrderError("")
+                }}
               />
+              {tierOrderError && (
+                <p className="text-xs text-destructive">{tierOrderError}</p>
+              )}
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium">
@@ -407,7 +486,7 @@ export function TiersTab({
               Cancel
             </Button>
             <Button
-              disabled={!name.trim() || !slug.trim() || isPending}
+              disabled={!name.trim() || !slug.trim() || isPending || !!tierOrderError}
               onClick={handleSave}
             >
               Add
@@ -463,8 +542,14 @@ export function TiersTab({
                 type="number"
                 min={1}
                 value={tierOrder}
-                onChange={(e) => setTierOrder(e.target.value)}
+                onChange={(e) => {
+                  setTierOrder(e.target.value)
+                  setTierOrderError("")
+                }}
               />
+              {tierOrderError && (
+                <p className="text-xs text-destructive">{tierOrderError}</p>
+              )}
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium">
@@ -487,7 +572,10 @@ export function TiersTab({
             <Button variant="outline" onClick={() => setEditingTier(null)}>
               Cancel
             </Button>
-            <Button disabled={isPending} onClick={handleSave}>
+            <Button
+              disabled={isPending || !!tierOrderError}
+              onClick={handleSave}
+            >
               Save changes
             </Button>
           </DialogFooter>

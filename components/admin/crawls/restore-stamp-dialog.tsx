@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { toast } from "sonner"
+import { WarningCircle } from "@phosphor-icons/react"
 
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -15,7 +15,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import type { MockStamp } from "@/components/admin/crawls/stamps-mock-data"
+import type { StampLogEntry } from "@/lib/types/crawls"
 
 export function RestoreStampDialog({
   stamp,
@@ -23,26 +23,33 @@ export function RestoreStampDialog({
   onOpenChange,
   onRestore,
 }: {
-  stamp: MockStamp | null
+  stamp: StampLogEntry | null
   open: boolean
   onOpenChange: (open: boolean) => void
-  onRestore: (stampId: string, note?: string) => void
+  onRestore: (stampId: string, note?: string) => Promise<string | null>
 }) {
   const [note, setNote] = React.useState("")
   const [isPending, startTransition] = React.useTransition()
+  const [error, setError] = React.useState<string | null>(null)
 
-  function handleRestore() {
+  async function handleRestore() {
     if (!stamp) return
+    setError(null)
     startTransition(async () => {
-      onRestore(stamp.id, note.trim() || undefined)
-      setNote("")
-      onOpenChange(false)
-      toast.success("Stamp restored. Tier completion will be re-evaluated.")
+      const err = await onRestore(stamp.id, note.trim() || undefined)
+      if (err) {
+        setError(err)
+      } else {
+        setNote("")
+        setError(null)
+        onOpenChange(false)
+      }
     })
   }
 
   function handleClose() {
     setNote("")
+    setError(null)
     onOpenChange(false)
   }
 
@@ -58,17 +65,26 @@ export function RestoreStampDialog({
         </AlertDialogHeader>
 
         {stamp && (
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-muted-foreground">
-              Note{" "}
-              <span className="font-normal">(optional)</span>
-            </label>
-            <Textarea
-              placeholder="Reason for restoration..."
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={2}
-            />
+          <div className="flex flex-col gap-3 text-xs">
+            {error && (
+              <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+                <WarningCircle className="size-4 mt-0.5 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                Note{" "}
+                <span className="font-normal">(optional)</span>
+              </label>
+              <Textarea
+                placeholder="Reason for restoration..."
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={2}
+              />
+            </div>
           </div>
         )}
 
@@ -78,7 +94,7 @@ export function RestoreStampDialog({
             disabled={isPending}
             onClick={handleRestore}
           >
-            Restore Stamp
+            {isPending ? "Restoring..." : "Restore Stamp"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

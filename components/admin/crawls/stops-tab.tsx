@@ -5,6 +5,7 @@ import {
   DotsSixVertical,
   Plus,
   Trash,
+  MagnifyingGlass,
 } from "@phosphor-icons/react"
 import { toast } from "sonner"
 
@@ -33,34 +34,48 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { cn } from "@/lib/utils"
-import type { MockCrawlStop } from "@/components/admin/crawls/mock-data"
-
-const MOCK_CAFES = [
-  "Cafe Georg",
-  "Tamp",
-  "Kof",
-  "Common Room",
-  "Cebu Union",
-  "Kuppa",
-  "El Sabil",
-  "The Good Cup",
-  "Bean Bag",
-  "Rise & Grind",
-]
+import type { CrawlStopWithCafe, CrawlStatus } from "@/lib/types/crawls"
+import {
+  addCrawlStopAction,
+  updateCrawlStopAction,
+  removeCrawlStopAction,
+  reorderStopsAction,
+  searchCafesAction,
+} from "@/app/admin/crawls/actions"
 
 const TIER_OPTIONS = ["city", "metro", "south", "north", "east", "west"]
 
 function StopRow({
   stop,
+  index,
   isPending,
   onToggleActive,
   onRemove,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
 }: {
-  stop: MockCrawlStop
+  stop: CrawlStopWithCafe
+  index: number
   isPending: boolean
   onToggleActive: (id: string) => void
   onRemove: (id: string) => void
+  onDragStart: (e: React.DragEvent, index: number) => void
+  onDragOver: (e: React.DragEvent, index: number) => void
+  onDrop: (e: React.DragEvent, index: number) => void
+  onDragEnd: (e: React.DragEvent) => void
 }) {
   return (
     <div
@@ -68,8 +83,15 @@ function StopRow({
         "flex items-center gap-3 py-3 border-b last:border-0",
         !stop.is_active && "opacity-50"
       )}
+      draggable
+      onDragStart={(e) => onDragStart(e, index)}
+      onDragOver={(e) => onDragOver(e, index)}
+      onDrop={(e) => onDrop(e, index)}
+      onDragEnd={onDragEnd}
     >
-      <DotsSixVertical className="size-4 text-muted-foreground/30 shrink-0 cursor-grab" />
+      <div className="cursor-grab active:cursor-grabbing" aria-label="Drag to reorder">
+        <DotsSixVertical className="size-4 text-muted-foreground/30 shrink-0" />
+      </div>
       <span className="text-xs text-muted-foreground w-5 shrink-0 text-right">
         {stop.stop_order}
       </span>
@@ -103,68 +125,200 @@ function StopRow({
 }
 
 export function StopsTab({
+  crawlId,
   stops: initialStops,
+  crawlStatus,
 }: {
-  stops: MockCrawlStop[]
+  crawlId: string
+  stops: CrawlStopWithCafe[]
+  crawlStatus: CrawlStatus
 }) {
   const [stops, setStops] = React.useState(initialStops)
   const [isPending, startTransition] = React.useTransition()
   const [addOpen, setAddOpen] = React.useState(false)
+  const [dragIndex, setDragIndex] = React.useState<number | null>(null)
+  const [removeConfirmId, setRemoveConfirmId] = React.useState<string | null>(null)
 
-  const [newCafe, setNewCafe] = React.useState("")
+  const [cafeSearch, setCafeSearch] = React.useState("")
+  const [searchResults, setSearchResults] = React.useState<Array<{ id: string; name: string; address: string | null; neighborhood: string | null }>>([])
+  const [selectedCafe, setSelectedCafe] = React.useState<{ id: string; name: string } | null>(null)
+  const [searchOpen, setSearchOpen] = React.useState(false)
+  const searchRef = React.useRef<HTMLDivElement>(null)
+  const searchInputRef = React.useRef<HTMLInputElement>(null)
+
   const [newTier, setNewTier] = React.useState("")
   const [newLabel, setNewLabel] = React.useState("")
   const [newIsActive, setNewIsActive] = React.useState(true)
 
-  const availableTierTags = TIER_OPTIONS
+  React.useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSearchOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
+
+  const debounceRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  React.useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (!cafeSearch.trim()) {
+      setSearchResults([])
+      return
+    }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const results = await searchCafesAction(cafeSearch, crawlId)
+        setSearchResults(results)
+        setSearchOpen(true)
+      } catch {
+        setSearchResults([])
+      }
+    }, 300)
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [cafeSearch, crawlId])
 
   function handleToggleActive(id: string) {
-    startTransition(async () => {
-      setStops((prev) =>
-        prev.map((s) =>
-          s.id === id ? { ...s, is_active: !s.is_active } : s
-        )
+    const original = stops.find((s) => s.id === id)
+    const newActive = !original?.is_active
+    setStops((prev) =>
+      prev.map((s) =>
+        s.id === id ? { ...s, is_active: newActive } : s
       )
-      toast.success("Stop updated")
+    )
+    startTransition(async () => {
+      const result = await updateCrawlStopAction(id, { is_active: newActive })
+      if (result.success) {
+        toast.success("Stop updated")
+      } else {
+        setStops((prev) =>
+          prev.map((s) =>
+            s.id === id ? { ...s, is_active: !newActive } : s
+          )
+        )
+        toast.error(result.error)
+      }
     })
   }
 
   function handleRemove(id: string) {
+    if (crawlStatus === "active") {
+      setRemoveConfirmId(id)
+      return
+    }
+    performRemove(id)
+  }
+
+  function performRemove(id: string) {
+    setRemoveConfirmId(null)
+    const removed = stops.find((s) => s.id === id)
+    setStops((prev) =>
+      prev
+        .filter((s) => s.id !== id)
+        .map((s, i) => ({ ...s, stop_order: i + 1 }))
+    )
     startTransition(async () => {
-      const removed = stops.find((s) => s.id === id)
-      setStops((prev) =>
-        prev
-          .filter((s) => s.id !== id)
-          .map((s, i) => ({ ...s, stop_order: i + 1 }))
-      )
-      toast.success(`Removed "${removed?.cafe_name}"`)
+      const result = await removeCrawlStopAction(id)
+      if (result.success) {
+        toast.success(`Removed "${removed?.cafe_name}"`)
+      } else {
+        toast.error(result.error)
+      }
     })
+  }
+
+  function handleDragStart(e: React.DragEvent, index: number) {
+    setDragIndex(index)
+    e.dataTransfer.effectAllowed = "move"
+  }
+
+  function handleDragOver(e: React.DragEvent, index: number) {
+    e.preventDefault()
+    if (dragIndex === null || dragIndex === index) return
+    const newStops = [...stops]
+    const [moved] = newStops.splice(dragIndex, 1)
+    newStops.splice(index, 0, moved)
+    setDragIndex(index)
+    setStops(newStops)
+  }
+
+  function handleDrop(_e: React.DragEvent, _index: number) {
+    setDragIndex(null)
+    const updates = stops.map((s, i) => ({
+      id: s.id,
+      stop_order: i + 1,
+    }))
+    startTransition(async () => {
+      const result = await reorderStopsAction(updates)
+      if (!result.success) {
+        setStops(initialStops)
+        toast.error(result.error)
+      } else {
+        toast.success("Stops reordered")
+      }
+    })
+  }
+
+  function handleDragEnd(_e: React.DragEvent) {
+    setDragIndex(null)
   }
 
   function handleAddStop() {
-    if (!newCafe || !newTier) return
+    if (!selectedCafe || !newTier) return
+
+    const nextOrder = stops.length > 0
+      ? Math.max(...stops.map((s) => s.stop_order)) + 1
+      : 1
+
+    const optimistic: CrawlStopWithCafe = {
+      id: "optimistic-" + Date.now(),
+      crawl_id: crawlId,
+      cafe_id: selectedCafe.id,
+      cafe_name: selectedCafe.name,
+      address: null,
+      neighborhood: null,
+      stop_order: nextOrder,
+      tier: newTier,
+      is_active: newIsActive,
+      label: newLabel || null,
+      created_at: new Date().toISOString(),
+    }
+
+    setStops((prev) => [...prev, optimistic])
+    setAddOpen(false)
+    setSelectedCafe(null)
+    setCafeSearch("")
+    setNewTier("")
+    setNewLabel("")
+    setNewIsActive(true)
 
     startTransition(async () => {
-      const newStop: MockCrawlStop = {
-        id: "stop-new-" + Date.now(),
-        crawl_id: stops[0]?.crawl_id ?? "",
-        cafe_name: newCafe,
-        stop_order: stops.length + 1,
+      const result = await addCrawlStopAction(crawlId, {
+        cafe_id: selectedCafe.id,
+        stop_order: nextOrder,
         tier: newTier,
-        is_active: newIsActive,
         label: newLabel || null,
+      })
+      if (result.success) {
+        toast.success("Stop added")
+      } else {
+        setStops((prev) => prev.filter((s) => s.id !== optimistic.id))
+        toast.error(result.error)
       }
-      setStops((prev) => [...prev, newStop])
-      setAddOpen(false)
-      setNewCafe("")
-      setNewTier("")
-      setNewLabel("")
-      setNewIsActive(true)
-      toast.success("Stop added")
     })
   }
 
+  function selectCafe(cafe: { id: string; name: string }) {
+    setSelectedCafe(cafe)
+    setCafeSearch(cafe.name)
+    setSearchOpen(false)
+  }
+
   const sorted = [...stops].sort((a, b) => a.stop_order - b.stop_order)
+  const isCrawlActive = crawlStatus === "active"
 
   return (
     <div className="flex flex-col gap-4">
@@ -186,18 +340,53 @@ export function StopsTab({
                 <div className="flex flex-col gap-4">
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-medium">Cafe</label>
-                    <Select value={newCafe} onValueChange={setNewCafe}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a cafe" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {MOCK_CAFES.map((cafe) => (
-                          <SelectItem key={cafe} value={cafe}>
-                            {cafe}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="relative" ref={searchRef}>
+                      <div className="relative">
+                        <MagnifyingGlass className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+                        <Input
+                          ref={searchInputRef}
+                          className="pl-8"
+                          placeholder="Search cafes..."
+                          value={cafeSearch}
+                          onChange={(e) => {
+                            setCafeSearch(e.target.value)
+                            setSelectedCafe(null)
+                          }}
+                          onFocus={() => {
+                            if (searchResults.length > 0) setSearchOpen(true)
+                          }}
+                        />
+                      </div>
+                      {searchOpen && searchResults.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 mt-1 border rounded-md bg-popover shadow-md z-50 max-h-48 overflow-y-auto">
+                          {searchResults.map((cafe) => (
+                            <button
+                              key={cafe.id}
+                              type="button"
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors"
+                              onClick={() => selectCafe(cafe)}
+                            >
+                              <span className="font-medium">{cafe.name}</span>
+                              {(cafe.address || cafe.neighborhood) && (
+                                <span className="text-muted-foreground block text-xs">
+                                  {[cafe.address, cafe.neighborhood].filter(Boolean).join(" · ")}
+                                </span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {selectedCafe && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Selected: {selectedCafe.name}
+                        </p>
+                      )}
+                      {cafeSearch && !selectedCafe && searchResults.length === 0 && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          No cafes found
+                        </p>
+                      )}
+                    </div>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-medium">Tier Tag</label>
@@ -206,7 +395,7 @@ export function StopsTab({
                         <SelectValue placeholder="Select tier tag" />
                       </SelectTrigger>
                       <SelectContent>
-                        {availableTierTags.map((tag) => (
+                        {TIER_OPTIONS.map((tag) => (
                           <SelectItem key={tag} value={tag}>
                             {tag}
                           </SelectItem>
@@ -248,12 +437,19 @@ export function StopsTab({
                 <DialogFooter>
                   <Button
                     variant="outline"
-                    onClick={() => setAddOpen(false)}
+                    onClick={() => {
+                      setAddOpen(false)
+                      setSelectedCafe(null)
+                      setCafeSearch("")
+                      setNewTier("")
+                      setNewLabel("")
+                      setNewIsActive(true)
+                    }}
                   >
                     Cancel
                   </Button>
                   <Button
-                    disabled={!newCafe || !newTier || isPending}
+                    disabled={!selectedCafe || !newTier || isPending}
                     onClick={handleAddStop}
                   >
                     Add
@@ -270,20 +466,50 @@ export function StopsTab({
             </p>
           ) : (
             <div>
-              {sorted.map((stop) => (
+              {sorted.map((stop, index) => (
                 <StopRow
                   key={stop.id}
                   stop={stop}
+                  index={index}
                   isPending={isPending}
                   onToggleActive={handleToggleActive}
                   onRemove={handleRemove}
-
+                  onDragStart={handleDragStart}
+                  onDragOver={handleDragOver}
+                  onDrop={handleDrop}
+                  onDragEnd={handleDragEnd}
                 />
               ))}
             </div>
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog
+        open={removeConfirmId !== null}
+        onOpenChange={() => setRemoveConfirmId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove stop?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Removing a stop from a live crawl will exclude it from tier
+              completion. Users who already claimed this stop keep their stamp.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (removeConfirmId) performRemove(removeConfirmId)
+              }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

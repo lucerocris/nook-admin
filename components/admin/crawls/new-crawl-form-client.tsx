@@ -10,6 +10,15 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
+import { createCrawlAction, checkSlugUniquenessAction } from "@/app/admin/crawls/actions"
+
+function fromDatetimeLocalValue(value: string): string {
+  const d = new Date(value)
+  const offset = -d.getTimezoneOffset()
+  const sign = offset >= 0 ? "+" : "-"
+  const pad = (n: number) => String(Math.abs(n)).padStart(2, "0")
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00${sign}${pad(Math.floor(offset / 60))}:${pad(offset % 60)}`
+}
 
 function slugify(text: string): string {
   return text
@@ -21,6 +30,14 @@ function slugify(text: string): string {
     .replace(/^-+|-+$/g, "")
 }
 
+function appendYear(slug: string, startsAt: string): string {
+  if (!startsAt) return slug
+  const year = new Date(startsAt).getFullYear()
+  if (isNaN(year)) return slug
+  const yearStr = String(year)
+  return slug.endsWith(yearStr) ? slug : `${slug}-${yearStr}`
+}
+
 export function NewCrawlFormClient() {
   const router = useRouter()
   const [isPending, startTransition] = React.useTransition()
@@ -29,34 +46,97 @@ export function NewCrawlFormClient() {
   const [description, setDescription] = React.useState("")
   const [slug, setSlug] = React.useState("")
   const [slugManuallyEdited, setSlugManuallyEdited] = React.useState(false)
+  const [slugError, setSlugError] = React.useState("")
   const [city, setCity] = React.useState("Cebu City")
   const [startsAt, setStartsAt] = React.useState("")
   const [endsAt, setEndsAt] = React.useState("")
   const [coverImageUrl, setCoverImageUrl] = React.useState("")
+  const [stampTemplateUrl, setStampTemplateUrl] = React.useState("")
   const [isFeatured, setIsFeatured] = React.useState(false)
+  const [dateError, setDateError] = React.useState("")
 
   function handleTitleChange(value: string) {
     setTitle(value)
     if (!slugManuallyEdited) {
-      setSlug(slugify(value))
+      setSlug(appendYear(slugify(value), startsAt))
     }
   }
 
   function handleSlugChange(value: string) {
     setSlugManuallyEdited(true)
     setSlug(value)
+    setSlugError("")
+  }
+
+  async function handleSlugBlur() {
+    if (!slug.trim()) return
+    const result = await checkSlugUniquenessAction(slug)
+    if (result.taken) {
+      setSlugError("This slug is already in use")
+    } else {
+      setSlugError("")
+    }
+  }
+
+  function handleStartsAtChange(value: string) {
+    setStartsAt(value)
+    setDateError("")
+    if (!slugManuallyEdited && title.trim()) {
+      setSlug(appendYear(slugify(title), value))
+    }
+  }
+
+  function handleEndsAtChange(value: string) {
+    setEndsAt(value)
+    setDateError("")
+  }
+
+  function validateDates(): boolean {
+    if (!startsAt || !endsAt) {
+      setDateError("Both start and end dates are required")
+      return false
+    }
+    if (new Date(endsAt) <= new Date(startsAt)) {
+      setDateError("End date must be after start date")
+      return false
+    }
+    setDateError("")
+    return true
   }
 
   function handleSubmit() {
+    if (!validateDates()) return
+    if (slugError) return
+
     startTransition(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      toast.success("Crawl created")
-      const mockId = "crawl-new-" + Date.now()
-      router.push(`/admin/crawls/${mockId}`)
+      const result = await createCrawlAction({
+        title: title.trim(),
+        description: description.trim() || null,
+        slug: slug.trim(),
+        city: city.trim(),
+        starts_at: fromDatetimeLocalValue(startsAt),
+        ends_at: fromDatetimeLocalValue(endsAt),
+        cover_image_url: coverImageUrl.trim() || null,
+        stamp_template_url: stampTemplateUrl.trim() || null,
+        is_featured: isFeatured,
+      })
+      if (result.success) {
+        toast.success("Crawl created")
+        router.push(`/admin/crawls/${result.id}`)
+      } else {
+        toast.error(result.error)
+      }
     })
   }
 
-  const canSubmit = title.trim() && slug.trim() && city.trim() && startsAt && endsAt
+  const canSubmit =
+    title.trim() &&
+    slug.trim() &&
+    !slugError &&
+    city.trim() &&
+    startsAt &&
+    endsAt &&
+    !dateError
 
   return (
     <div className="w-full max-w-2xl mx-auto flex flex-col gap-6 px-4 py-6 lg:px-6">
@@ -107,10 +187,15 @@ export function NewCrawlFormClient() {
             placeholder="cebu-island-crawl-2026"
             value={slug}
             onChange={(e) => handleSlugChange(e.target.value)}
+            onBlur={handleSlugBlur}
           />
-          <p className="text-xs text-muted-foreground">
-            Affects deep links to the crawl
-          </p>
+          {slugError ? (
+            <p className="text-xs text-destructive">{slugError}</p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Affects deep links to the crawl
+            </p>
+          )}
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -128,7 +213,7 @@ export function NewCrawlFormClient() {
             <Input
               type="datetime-local"
               value={startsAt}
-              onChange={(e) => setStartsAt(e.target.value)}
+              onChange={(e) => handleStartsAtChange(e.target.value)}
             />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -136,10 +221,13 @@ export function NewCrawlFormClient() {
             <Input
               type="datetime-local"
               value={endsAt}
-              onChange={(e) => setEndsAt(e.target.value)}
+              onChange={(e) => handleEndsAtChange(e.target.value)}
             />
           </div>
         </div>
+        {dateError && (
+          <p className="text-xs text-destructive">{dateError}</p>
+        )}
 
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium">Cover Image URL</label>
@@ -155,6 +243,15 @@ export function NewCrawlFormClient() {
               aria-hidden="true"
             />
           )}
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium">Stamp Template URL</label>
+          <Input
+            placeholder="https://example.com/stamp-template.png"
+            value={stampTemplateUrl}
+            onChange={(e) => setStampTemplateUrl(e.target.value)}
+          />
         </div>
 
         <div className="flex items-center gap-3">

@@ -39,8 +39,19 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { CrawlStatusBadge } from "@/components/admin/crawls/crawl-status-badge"
-import type { MockCrawl, CrawlStatus } from "@/components/admin/crawls/mock-data"
+import type { Crawl, CrawlStatus } from "@/lib/types/crawls"
+import { toggleFeaturedAction, updateCrawlStatusAction } from "@/app/admin/crawls/actions"
 
 function formatDateRange(startsAt: string, endsAt: string) {
   const start = new Date(startsAt)
@@ -57,63 +68,109 @@ function CrawlActions({
   crawl,
   onStatusChange,
 }: {
-  crawl: MockCrawl
+  crawl: Crawl
   onStatusChange: (id: string, status: CrawlStatus) => void
 }) {
   const router = useRouter()
   const [isPending, startTransition] = React.useTransition()
+  const [activateOpen, setActivateOpen] = React.useState(false)
 
   function handleStatusChange(newStatus: CrawlStatus) {
+    if (newStatus === "active") {
+      setActivateOpen(true)
+      return
+    }
     startTransition(async () => {
-      onStatusChange(crawl.id, newStatus)
-      toast.success(`Crawl ${newStatus === "active" ? "activated" : newStatus === "completed" ? "completed" : "cancelled"}`)
+      const result = await updateCrawlStatusAction(crawl.id, newStatus)
+      if (result.success) {
+        onStatusChange(crawl.id, newStatus)
+        toast.success(
+          newStatus === "completed"
+            ? "Crawl completed"
+            : "Crawl cancelled",
+        )
+      } else {
+        toast.error(result.error)
+      }
+    })
+  }
+
+  function handleActivateConfirm() {
+    setActivateOpen(false)
+    startTransition(async () => {
+      const result = await updateCrawlStatusAction(crawl.id, "active")
+      if (result.success) {
+        onStatusChange(crawl.id, "active")
+        toast.success("Crawl activated")
+      } else {
+        toast.error(result.error)
+      }
     })
   }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" disabled={isPending}>
-          <DotsThree weight="bold" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => router.push(`/admin/crawls/${crawl.id}`)}>
-          <PencilSimple />
-          Edit
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push(`/admin/crawls/${crawl.id}`)}>
-          <Eye />
-          View Detail
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        {crawl.status === "draft" && (
-          <DropdownMenuItem onClick={() => handleStatusChange("active")}>
-            <ArrowLineRight />
-            Activate
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" disabled={isPending}>
+            <DotsThree weight="bold" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => router.push(`/admin/crawls/${crawl.id}`)}>
+            <PencilSimple />
+            Edit
           </DropdownMenuItem>
-        )}
-        {crawl.status === "active" && (
-          <DropdownMenuItem onClick={() => handleStatusChange("completed")}>
-            <CheckCircle />
-            Complete
+          <DropdownMenuItem onClick={() => router.push(`/admin/crawls/${crawl.id}`)}>
+            <Eye />
+            View Detail
           </DropdownMenuItem>
-        )}
-        {(crawl.status === "draft" || crawl.status === "active") && (
-          <DropdownMenuItem
-            variant="destructive"
-            onClick={() => handleStatusChange("cancelled")}
-          >
-            <Prohibit />
-            Cancel
-          </DropdownMenuItem>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+          <DropdownMenuSeparator />
+          {crawl.status === "draft" && (
+            <DropdownMenuItem onClick={() => handleStatusChange("active")}>
+              <ArrowLineRight />
+              Activate
+            </DropdownMenuItem>
+          )}
+          {crawl.status === "active" && (
+            <DropdownMenuItem onClick={() => handleStatusChange("completed")}>
+              <CheckCircle />
+              Complete
+            </DropdownMenuItem>
+          )}
+          {(crawl.status === "draft" || crawl.status === "active") && (
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => handleStatusChange("cancelled")}
+            >
+              <Prohibit />
+              Cancel
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <AlertDialog open={activateOpen} onOpenChange={setActivateOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Activate crawl?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Once active, this crawl will be visible to users.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleActivateConfirm}>
+              Activate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }
 
-export function CrawlsListClient({ crawls: initialCrawls }: { crawls: MockCrawl[] }) {
+export function CrawlsListClient({ crawls: initialCrawls }: { crawls: Crawl[] }) {
   const router = useRouter()
   const params = useSearchParams()
   const [crawls, setCrawls] = React.useState(initialCrawls)
@@ -136,11 +193,19 @@ export function CrawlsListClient({ crawls: initialCrawls }: { crawls: MockCrawl[
     )
   }
 
-  function handleFeaturedToggle(id: string, featured: boolean) {
+  async function handleFeaturedToggle(id: string, featured: boolean) {
     setCrawls((prev) =>
       prev.map((c) => (c.id === id ? { ...c, is_featured: featured } : c))
     )
-    toast.success(featured ? "Crawl featured" : "Crawl unfeatured")
+    const result = await toggleFeaturedAction(id, featured)
+    if (result.success) {
+      toast.success(featured ? "Crawl featured" : "Crawl unfeatured")
+    } else {
+      setCrawls((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, is_featured: !featured } : c))
+      )
+      toast.error(result.error)
+    }
   }
 
   const filtered = crawls.filter(

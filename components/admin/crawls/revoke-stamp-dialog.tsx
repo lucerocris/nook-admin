@@ -16,7 +16,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { StampMethodBadge } from "@/components/admin/crawls/stamp-method-badge"
-import type { MockStamp } from "@/components/admin/crawls/stamps-mock-data"
+import type { StampLogEntry } from "@/lib/types/crawls"
 
 export function RevokeStampDialog({
   stamp,
@@ -24,25 +24,33 @@ export function RevokeStampDialog({
   onOpenChange,
   onRevoke,
 }: {
-  stamp: MockStamp | null
+  stamp: StampLogEntry | null
   open: boolean
   onOpenChange: (open: boolean) => void
-  onRevoke: (stampId: string, note: string) => void
+  onRevoke: (stampId: string, note: string) => Promise<string | null>
 }) {
   const [auditNote, setAuditNote] = React.useState("")
   const [isPending, startTransition] = React.useTransition()
+  const [error, setError] = React.useState<string | null>(null)
 
-  function handleRevoke() {
+  async function handleRevoke() {
     if (!stamp || !auditNote.trim()) return
+    setError(null)
     startTransition(async () => {
-      onRevoke(stamp.id, auditNote.trim())
-      setAuditNote("")
-      onOpenChange(false)
+      const err = await onRevoke(stamp.id, auditNote.trim())
+      if (err) {
+        setError(err)
+      } else {
+        setAuditNote("")
+        setError(null)
+        onOpenChange(false)
+      }
     })
   }
 
   function handleClose() {
     setAuditNote("")
+    setError(null)
     onOpenChange(false)
   }
 
@@ -55,14 +63,21 @@ export function RevokeStampDialog({
 
         {stamp && (
           <div className="flex flex-col gap-3 text-xs">
+            {error && (
+              <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+                <WarningCircle className="size-4 mt-0.5 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
             <div className="rounded-lg border bg-muted/30 p-3 flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">User</span>
-                <span className="font-medium">@{stamp.username}</span>
+                <span className="font-medium">{stamp.username}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Stop</span>
-                <span className="font-medium">{stamp.cafe_name}</span>
+                <span className="font-medium">{stamp.stop_order} · {stamp.cafe_name}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">
@@ -89,7 +104,9 @@ export function RevokeStampDialog({
                   Distance at claim
                 </span>
                 <span className="font-medium">
-                  {stamp.distance_meters}m
+                  {stamp.distance_meters != null
+                    ? `${stamp.distance_meters}m`
+                    : "—"}
                 </span>
               </div>
             </div>
@@ -127,7 +144,7 @@ export function RevokeStampDialog({
             disabled={!auditNote.trim() || isPending}
             onClick={handleRevoke}
           >
-            Revoke Stamp
+            {isPending ? "Revoking..." : "Revoke Stamp"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

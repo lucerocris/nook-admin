@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge"
-import type { CrawlStatus } from "@/components/admin/crawls/mock-data"
+import type { CrawlStatus } from "@/lib/types/crawls"
 
 export function CrawlStatusBadge({ status }: { status: CrawlStatus }) {
   if (status === "active") {

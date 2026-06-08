@@ -8,6 +8,16 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   Tabs,
   TabsContent,
   TabsList,
@@ -18,50 +28,85 @@ import { OverviewTab } from "@/components/admin/crawls/overview-tab"
 import { StopsTab } from "@/components/admin/crawls/stops-tab"
 import { TiersTab } from "@/components/admin/crawls/tiers-tab"
 import { StampsLogTab } from "@/components/admin/crawls/stamps-log-tab"
-import {
-  MOCK_CRAWLS,
-  MOCK_TIERS,
-  MOCK_STOPS,
-  type MockCrawl,
-  type MockCrawlTier,
-  type MockCrawlStop,
-  type CrawlStatus,
-} from "@/components/admin/crawls/mock-data"
+import type {
+  Crawl,
+  CrawlTier,
+  CrawlStopWithCafe,
+  CrawlStats,
+  CrawlStatus,
+  StampLogEntry,
+  StopOption,
+} from "@/lib/types/crawls"
+import { updateCrawlStatusAction, toggleFeaturedAction } from "@/app/admin/crawls/actions"
 
-export function CrawlDetailClient({ crawlId }: { crawlId: string }) {
-  const crawl = MOCK_CRAWLS.find((c) => c.id === crawlId) ?? MOCK_CRAWLS[0]
-  const tiers = MOCK_TIERS.filter((t) => t.crawl_id === crawl.id)
-  const stops = MOCK_STOPS.filter((s) => s.crawl_id === crawl.id)
-
-  const [currentCrawl, setCurrentCrawl] = React.useState(crawl)
-  const [isFeatured, setIsFeatured] = React.useState(crawl.is_featured)
+export function CrawlDetailClient({
+  crawl: initialCrawl,
+  stops: initialStops,
+  tiers: initialTiers,
+  stats: initialStats,
+  stampLogs: initialStampLogs,
+  stopOptions: initialStopOptions,
+}: {
+  crawl: Crawl
+  stops: CrawlStopWithCafe[]
+  tiers: CrawlTier[]
+  stats: CrawlStats
+  stampLogs: StampLogEntry[]
+  stopOptions: StopOption[]
+}) {
+  const [currentCrawl, setCurrentCrawl] = React.useState(initialCrawl)
+  const [isFeatured, setIsFeatured] = React.useState(initialCrawl.is_featured)
   const [isPending, startTransition] = React.useTransition()
+  const [activateOpen, setActivateOpen] = React.useState(false)
 
-  function handleStatusChange(newStatus: CrawlStatus) {
+  async function handleStatusChange(newStatus: CrawlStatus) {
+    if (newStatus === "active") {
+      setActivateOpen(true)
+      return
+    }
+
     startTransition(async () => {
-      setCurrentCrawl((prev) => ({ ...prev, status: newStatus }))
-      const label =
-        newStatus === "active"
-          ? "activated"
-          : newStatus === "completed"
-            ? "completed"
-            : "cancelled"
-      toast.success(`Crawl ${label}`)
+      const result = await updateCrawlStatusAction(currentCrawl.id, newStatus)
+      if (result.success) {
+        setCurrentCrawl((prev) => ({ ...prev, status: newStatus }))
+        const label =
+          newStatus === "completed" ? "completed" : "cancelled"
+        toast.success(`Crawl ${label}`)
+      } else {
+        toast.error(result.error)
+      }
     })
   }
 
-  function handleFeaturedToggle(checked: boolean) {
-    setIsFeatured(checked)
-    setCurrentCrawl((prev) => ({ ...prev, is_featured: checked }))
-    toast.success(checked ? "Crawl featured" : "Crawl unfeatured")
+  function handleActivateConfirm() {
+    setActivateOpen(false)
+    startTransition(async () => {
+      const result = await updateCrawlStatusAction(currentCrawl.id, "active")
+      if (result.success) {
+        setCurrentCrawl((prev) => ({ ...prev, status: "active" }))
+        toast.success("Crawl activated")
+      } else {
+        toast.error(result.error)
+      }
+    })
   }
 
-  const statusActionLabel =
-    currentCrawl.status === "draft"
-      ? "Activate"
-      : currentCrawl.status === "active"
-        ? "Mark Completed"
-        : null
+  async function handleFeaturedToggle(checked: boolean) {
+    setIsFeatured(checked)
+    setCurrentCrawl((prev) => ({ ...prev, is_featured: checked }))
+    const result = await toggleFeaturedAction(currentCrawl.id, checked)
+    if (result.success) {
+      toast.success(checked ? "Crawl featured" : "Crawl unfeatured")
+    } else {
+      setIsFeatured(!checked)
+      setCurrentCrawl((prev) => ({ ...prev, is_featured: !checked }))
+      toast.error(result.error)
+    }
+  }
+
+  const canActivate = currentCrawl.status === "draft"
+  const canComplete = currentCrawl.status === "active"
+  const canCancel = currentCrawl.status === "draft" || currentCrawl.status === "active"
 
   return (
     <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 px-4 py-6 lg:px-6">
@@ -96,22 +141,25 @@ export function CrawlDetailClient({ crawlId }: { crawlId: string }) {
               Featured
             </label>
           </div>
-          {statusActionLabel && (
+          {canActivate && (
             <Button
-              variant={
-                currentCrawl.status === "draft" ? "default" : "outline"
-              }
+              variant="default"
               disabled={isPending}
-              onClick={() =>
-                handleStatusChange(
-                  currentCrawl.status === "draft" ? "active" : "completed"
-                )
-              }
+              onClick={() => handleStatusChange("active")}
             >
-              {statusActionLabel}
+              Activate
             </Button>
           )}
-          {currentCrawl.status !== "cancelled" && (
+          {canComplete && (
+            <Button
+              variant="outline"
+              disabled={isPending}
+              onClick={() => handleStatusChange("completed")}
+            >
+              Mark Completed
+            </Button>
+          )}
+          {canCancel && (
             <Button
               variant="outline"
               className="text-destructive border-destructive/30 hover:bg-destructive/10"
@@ -124,24 +172,54 @@ export function CrawlDetailClient({ crawlId }: { crawlId: string }) {
         </div>
       </div>
 
-      <Tabs defaultValue="overview" variant="line">
-        <TabsList>
+      <AlertDialog open={activateOpen} onOpenChange={setActivateOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Activate crawl?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Once active, this crawl will be visible to users.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleActivateConfirm}>
+              Activate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Tabs defaultValue="overview">
+        <TabsList variant="line">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="stops">Stops</TabsTrigger>
           <TabsTrigger value="tiers">Tiers</TabsTrigger>
           <TabsTrigger value="stamps">Stamps</TabsTrigger>
         </TabsList>
         <TabsContent value="overview" className="pt-4">
-          <OverviewTab crawl={currentCrawl} tiers={tiers} />
+          <OverviewTab crawl={currentCrawl} tiers={initialTiers} stats={initialStats} />
         </TabsContent>
         <TabsContent value="stops" className="pt-4">
-          <StopsTab stops={stops} />
+          <StopsTab
+            crawlId={currentCrawl.id}
+            stops={initialStops}
+            crawlStatus={currentCrawl.status}
+          />
         </TabsContent>
         <TabsContent value="tiers" className="pt-4">
-          <TiersTab tiers={tiers} />
+          <TiersTab
+            tiers={initialTiers}
+            crawlId={currentCrawl.id}
+            crawlStatus={currentCrawl.status}
+          />
         </TabsContent>
         <TabsContent value="stamps" className="pt-4">
-          <StampsLogTab crawlId={currentCrawl.id} stops={stops} />
+          <StampsLogTab
+            crawlId={currentCrawl.id}
+            stops={initialStops}
+            initialStampLogs={initialStampLogs}
+            stopOptions={initialStopOptions}
+          />
         </TabsContent>
       </Tabs>
     </div>
