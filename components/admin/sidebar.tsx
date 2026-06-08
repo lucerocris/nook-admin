@@ -10,9 +10,10 @@ import {
   IdentificationCardIcon,
   UsersIcon,
   TagIcon,
+  TrophyIcon,
+  MapPinAreaIcon,
   ChatCircleTextIcon,
   ClipboardTextIcon,
-  MapPinAreaIcon,
   SignOutIcon,
 } from "@phosphor-icons/react"
 import { toast } from "sonner"
@@ -43,6 +44,7 @@ const navItems: NavItem[] = [
   { title: "Owners", url: "/admin/owners", icon: IdentificationCardIcon },
   { title: "Users", url: "/admin/users", icon: UsersIcon },
   { title: "Tags", url: "/admin/tags", icon: TagIcon },
+  { title: "Achievements", url: "/admin/achievements", icon: TrophyIcon },
   { title: "Crawls", url: "/admin/crawls", icon: MapPinAreaIcon },
   { title: "Reviews", url: "/admin/reviews", icon: ChatCircleTextIcon },
 ]
