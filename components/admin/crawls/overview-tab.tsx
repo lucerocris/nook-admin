@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { SealCheck } from "@phosphor-icons/react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -30,6 +31,9 @@ export function OverviewTab({
   const [endsAt, setEndsAt] = React.useState(crawl.ends_at)
   const [coverImageUrl, setCoverImageUrl] = React.useState(
     crawl.cover_image_url ?? ""
+  )
+  const [stampTemplateUrl, setStampTemplateUrl] = React.useState(
+    crawl.stamp_template_url ?? ""
   )
   const [isPending, startTransition] = React.useTransition()
 
@@ -121,6 +125,30 @@ export function OverviewTab({
               aria-hidden="true"
             />
           )}
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium">Stamp Template</label>
+          <Input
+            placeholder="https://example.com/stamp-template.png"
+            value={stampTemplateUrl}
+            onChange={(e) => setStampTemplateUrl(e.target.value)}
+          />
+          {stampTemplateUrl ? (
+            <div
+              className="mt-2 size-[120px] rounded-full bg-muted bg-cover bg-center border"
+              style={{ backgroundImage: `url(${stampTemplateUrl})` }}
+              aria-hidden="true"
+            />
+          ) : (
+            <div className="mt-2 size-[120px] rounded-full border-2 border-dashed border-muted-foreground/30 flex flex-col items-center justify-center gap-1 text-muted-foreground">
+              <SealCheck className="size-6" />
+              <span className="text-xs">No template yet</span>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            This template wraps each cafe's logo when a user claims a stop.
+          </p>
         </div>
 
         <div className="pt-2">
