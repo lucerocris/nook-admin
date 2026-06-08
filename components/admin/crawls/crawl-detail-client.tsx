@@ -17,6 +17,7 @@ import { CrawlStatusBadge } from "@/components/admin/crawls/crawl-status-badge"
 import { OverviewTab } from "@/components/admin/crawls/overview-tab"
 import { StopsTab } from "@/components/admin/crawls/stops-tab"
 import { TiersTab } from "@/components/admin/crawls/tiers-tab"
+import { StampsLogTab } from "@/components/admin/crawls/stamps-log-tab"
 import {
   MOCK_CRAWLS,
   MOCK_TIERS,
@@ -128,6 +129,7 @@ export function CrawlDetailClient({ crawlId }: { crawlId: string }) {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="stops">Stops</TabsTrigger>
           <TabsTrigger value="tiers">Tiers</TabsTrigger>
+          <TabsTrigger value="stamps">Stamps</TabsTrigger>
         </TabsList>
         <TabsContent value="overview" className="pt-4">
           <OverviewTab crawl={currentCrawl} tiers={tiers} />
@@ -137,6 +139,9 @@ export function CrawlDetailClient({ crawlId }: { crawlId: string }) {
         </TabsContent>
         <TabsContent value="tiers" className="pt-4">
           <TiersTab tiers={tiers} />
+        </TabsContent>
+        <TabsContent value="stamps" className="pt-4">
+          <StampsLogTab crawlId={currentCrawl.id} stops={stops} />
         </TabsContent>
       </Tabs>
     </div>

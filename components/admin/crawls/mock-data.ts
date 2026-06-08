@@ -10,6 +10,7 @@ export type MockCrawl = {
   starts_at: string
   ends_at: string
   cover_image_url: string | null
+  stamp_template_url: string | null
   is_featured: boolean
   total_stops: number
 }
@@ -48,6 +49,7 @@ export const MOCK_CRAWLS: MockCrawl[] = [
     starts_at: "2026-07-01T00:00:00",
     ends_at: "2026-08-31T23:59:59",
     cover_image_url: null,
+    stamp_template_url: null,
     is_featured: true,
     total_stops: 6,
   },
@@ -62,6 +64,7 @@ export const MOCK_CRAWLS: MockCrawl[] = [
     starts_at: "2026-08-01T00:00:00",
     ends_at: "2026-09-30T23:59:59",
     cover_image_url: null,
+    stamp_template_url: null,
     is_featured: false,
     total_stops: 5,
   },
@@ -76,6 +79,7 @@ export const MOCK_CRAWLS: MockCrawl[] = [
     starts_at: "2026-03-01T00:00:00",
     ends_at: "2026-04-30T23:59:59",
     cover_image_url: null,
+    stamp_template_url: null,
     is_featured: false,
     total_stops: 8,
   },
