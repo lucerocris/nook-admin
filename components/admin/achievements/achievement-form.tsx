@@ -19,8 +19,8 @@ import {
   SheetFooter,
   SheetClose,
 } from "@/components/ui/sheet"
-import type { AchievementCategory, SourceType, AchievementDef } from "./mock-data"
-import { MOCK_ACHIEVEMENTS } from "./mock-data"
+import { checkSlugAction } from "@/lib/actions/achievements"
+import type { AchievementCategory, SourceType, AchievementDef } from "@/lib/types/achievements"
 
 function FieldGroup({ label, help, children }: { label: string; help?: string; children: React.ReactNode }) {
   return (
@@ -67,10 +67,12 @@ export function AchievementForm({
   editingAchievement,
   onSave,
   onCancel,
+  saving = false,
 }: {
   editingAchievement: AchievementDef | null
   onSave: (data: FormState) => void
   onCancel: () => void
+  saving?: boolean
 }) {
   const [form, setForm] = React.useState<FormState>(emptyForm)
   const [slugManuallyEdited, setSlugManuallyEdited] = React.useState(false)
@@ -80,7 +82,7 @@ export function AchievementForm({
       setForm({
         name: editingAchievement.name,
         slug: editingAchievement.slug,
-        description: editingAchievement.description,
+        description: editingAchievement.description ?? "",
         category: editingAchievement.category,
         source_type: editingAchievement.source_type,
         source_id: editingAchievement.source_id ?? "",
@@ -112,7 +114,7 @@ export function AchievementForm({
     setForm((prev) => ({ ...prev, slug }))
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!form.name.trim()) {
       toast.error("Name is required")
       return
@@ -130,10 +132,12 @@ export function AchievementForm({
       return
     }
 
-    const slugTaken = MOCK_ACHIEVEMENTS.some(
-      (a) => a.slug === form.slug && a.id !== editingAchievement?.id,
-    )
-    if (slugTaken) {
+    const result = await checkSlugAction(form.slug, editingAchievement?.id)
+    if (!result.success) {
+      toast.error(result.error)
+      return
+    }
+    if (result.data?.exists) {
       toast.error("Slug is already taken")
       return
     }
@@ -231,7 +235,7 @@ export function AchievementForm({
                 alt="Badge preview"
                 className="size-10 rounded object-cover border"
                 onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none"
+                  ;(e.target as HTMLImageElement).style.display = "none"
                 }}
               />
             ) : (
@@ -249,7 +253,7 @@ export function AchievementForm({
           <div className="flex flex-col">
             <span className="text-sm font-medium">Limited Edition</span>
             <span className="text-xs text-muted-foreground">
-              Show a "Limited Edition" indicator on the badge
+              Show a &quot;Limited Edition&quot; indicator on the badge
             </span>
           </div>
           <Switch
@@ -262,7 +266,7 @@ export function AchievementForm({
           <div className="flex flex-col">
             <span className="text-sm font-medium">Hidden</span>
             <span className="text-xs text-muted-foreground">
-              Hidden achievements don't show in the public catalog until earned
+              Hidden achievements don&apos;t show in the public catalog until earned
             </span>
           </div>
           <Switch
@@ -274,12 +278,16 @@ export function AchievementForm({
 
       <SheetFooter>
         <SheetClose asChild>
-          <Button variant="outline" onClick={onCancel}>
+          <Button variant="outline" onClick={onCancel} disabled={saving}>
             Cancel
           </Button>
         </SheetClose>
-        <Button onClick={handleSave}>
-          {editingAchievement ? "Save Changes" : "Create Achievement"}
+        <Button onClick={handleSave} disabled={saving}>
+          {saving
+            ? "Saving..."
+            : editingAchievement
+              ? "Save Changes"
+              : "Create Achievement"}
         </Button>
       </SheetFooter>
     </div>

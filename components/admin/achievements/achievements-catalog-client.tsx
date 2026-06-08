@@ -11,6 +11,7 @@ import {
   Star,
   EyeSlash,
 } from "@phosphor-icons/react"
+import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -39,8 +40,11 @@ import {
 } from "@/components/ui/sheet"
 import { CategoryBadge, SourceTypeBadge } from "./achievement-badges"
 import { AchievementForm } from "./achievement-form"
-import { MOCK_ACHIEVEMENTS } from "./mock-data"
-import type { AchievementDef, AchievementCategory, SourceType } from "./mock-data"
+import type { AchievementDef, AchievementCategory, SourceType } from "@/lib/types/achievements"
+import {
+  createAchievementAction,
+  updateAchievementAction,
+} from "@/lib/actions/achievements"
 
 function formatDate(isoString: string) {
   return new Date(isoString).toLocaleDateString("en-US", {
@@ -82,6 +86,7 @@ export function AchievementsCatalogClient({
 
   const [sheetOpen, setSheetOpen] = React.useState(false)
   const [editingAchievement, setEditingAchievement] = React.useState<AchievementDef | null>(null)
+  const [saving, setSaving] = React.useState(false)
 
   const filtered = achievements.filter((a) => {
     if (search) {
@@ -109,7 +114,7 @@ export function AchievementsCatalogClient({
     setSheetOpen(true)
   }
 
-  function handleSave(formData: {
+  async function handleSave(formData: {
     name: string
     slug: string
     description: string
@@ -120,42 +125,43 @@ export function AchievementsCatalogClient({
     is_limited_edition: boolean
     is_hidden: boolean
   }) {
-    if (editingAchievement) {
-      setAchievements((prev) =>
-        prev.map((a) =>
-          a.id === editingAchievement.id
-            ? {
-                ...a,
-                name: formData.name,
-                slug: formData.slug,
-                description: formData.description,
-                category: formData.category as AchievementCategory,
-                source_type: formData.source_type as SourceType,
-                source_id: formData.source_id || null,
-                badge_image_url: formData.badge_image_url || null,
-                is_limited_edition: formData.is_limited_edition,
-                is_hidden: formData.is_hidden,
-              }
-            : a,
-        ),
-      )
-    } else {
-      const newAchievement: AchievementDef = {
-        id: `ach-${Date.now()}`,
+    setSaving(true)
+    try {
+      const insert = {
         name: formData.name,
         slug: formData.slug,
-        description: formData.description,
+        description: formData.description || null,
         category: formData.category as AchievementCategory,
         source_type: formData.source_type as SourceType,
         source_id: formData.source_id || null,
         badge_image_url: formData.badge_image_url || null,
         is_limited_edition: formData.is_limited_edition,
         is_hidden: formData.is_hidden,
-        created_at: new Date().toISOString(),
       }
-      setAchievements((prev) => [newAchievement, ...prev])
+
+      if (editingAchievement) {
+        const result = await updateAchievementAction(
+          editingAchievement.id,
+          insert,
+        )
+        if (!result.success) {
+          toast.error(result.error)
+          return
+        }
+      } else {
+        const result = await createAchievementAction(insert)
+        if (!result.success) {
+          toast.error(result.error)
+          return
+        }
+      }
+      setSheetOpen(false)
+      router.refresh()
+    } catch {
+      toast.error("Something went wrong")
+    } finally {
+      setSaving(false)
     }
-    setSheetOpen(false)
   }
 
   return (
@@ -335,6 +341,7 @@ export function AchievementsCatalogClient({
               editingAchievement={editingAchievement}
               onSave={handleSave}
               onCancel={() => setSheetOpen(false)}
+              saving={saving}
             />
           </div>
         </SheetContent>

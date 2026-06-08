@@ -1,4 +1,4 @@
-import type { AchievementCategory, SourceType } from "./mock-data"
+import type { AchievementCategory, SourceType } from "@/lib/types/achievements"
 import { cn } from "@/lib/utils"
 
 const categoryStyles: Record<AchievementCategory, string> = {

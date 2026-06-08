@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useSearchParams } from "next/navigation"
+import { useSearchParams, useRouter } from "next/navigation"
 import {
   CaretUpDown,
   Check,
@@ -12,6 +12,7 @@ import {
   ArrowLeft,
   User,
 } from "@phosphor-icons/react"
+import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -35,12 +36,12 @@ import {
 } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { CategoryBadge } from "./achievement-badges"
+import type { AchievementDef, Profile } from "@/lib/types/achievements"
 import {
-  MOCK_ACHIEVEMENTS,
-  MOCK_PROFILES,
-  MOCK_USER_ACHIEVEMENTS,
-} from "./mock-data"
-import type { AchievementDef, Profile, AchievementCategory, SourceType } from "./mock-data"
+  searchUsersAction,
+  checkDuplicateAwardAction,
+  awardAchievementAction,
+} from "@/lib/actions/achievements"
 
 function nowLocalISO() {
   const now = new Date()
@@ -50,10 +51,17 @@ function nowLocalISO() {
 
 type DuplicateStatus =
   | { kind: "idle" }
+  | { kind: "checking" }
   | { kind: "clean" }
   | { kind: "duplicate"; earnedAt: string }
+  | { kind: "error"; message: string }
 
-export function ManualAwardClient() {
+export function ManualAwardClient({
+  initialAchievements,
+}: {
+  initialAchievements: AchievementDef[]
+}) {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const preselectedId = searchParams.get("achievement_id")
 
@@ -67,30 +75,74 @@ export function ManualAwardClient() {
   const [userOpen, setUserOpen] = React.useState(false)
   const [achievementOpen, setAchievementOpen] = React.useState(false)
 
+  const [users, setUsers] = React.useState<Profile[]>([])
+  const [searching, setSearching] = React.useState(false)
+  const [searchQuery, setSearchQuery] = React.useState("")
+  const searchTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const [duplicateStatus, setDuplicateStatus] = React.useState<DuplicateStatus>({
+    kind: "idle",
+  })
+  const [saving, setSaving] = React.useState(false)
+
   React.useEffect(() => {
     if (preselectedId) {
-      const found = MOCK_ACHIEVEMENTS.find((a) => a.id === preselectedId)
+      const found = initialAchievements.find((a) => a.id === preselectedId)
       if (found) setSelectedAchievement(found)
     }
-  }, [preselectedId])
+  }, [preselectedId, initialAchievements])
 
-  const duplicateStatus: DuplicateStatus = React.useMemo(() => {
-    if (!selectedUser || !selectedAchievement) return { kind: "idle" }
-    const existing = MOCK_USER_ACHIEVEMENTS.find(
-      (ua) =>
-        ua.user_id === selectedUser.id &&
-        ua.achievement_id === selectedAchievement.id,
+  React.useEffect(() => {
+    if (!selectedUser || !selectedAchievement) {
+      setDuplicateStatus({ kind: "idle" })
+      return
+    }
+    setDuplicateStatus({ kind: "checking" })
+
+    checkDuplicateAwardAction(selectedUser.id, selectedAchievement.id).then(
+      (result) => {
+        if (!result.success) {
+          setDuplicateStatus({ kind: "error", message: result.error })
+          return
+        }
+        if (result.data) {
+          setDuplicateStatus({
+            kind: "duplicate",
+            earnedAt: result.data.earned_at,
+          })
+        } else {
+          setDuplicateStatus({ kind: "clean" })
+        }
+      },
     )
-    if (existing) return { kind: "duplicate", earnedAt: existing.earned_at }
-    return { kind: "clean" }
   }, [selectedUser, selectedAchievement])
+
+  async function handleUserSearch(query: string) {
+    setSearchQuery(query)
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+
+    if (query.length < 2) {
+      setUsers([])
+      return
+    }
+
+    setSearching(true)
+    searchTimer.current = setTimeout(async () => {
+      const result = await searchUsersAction(query)
+      if (result.success) {
+        setUsers(result.data ?? [])
+      }
+      setSearching(false)
+    }, 300)
+  }
 
   const canSubmit =
     selectedUser &&
     selectedAchievement &&
     duplicateStatus.kind === "clean" &&
     earnedAt &&
-    new Date(earnedAt) <= new Date()
+    new Date(earnedAt) <= new Date() &&
+    !saving
 
   function handleAwardAnother() {
     setSelectedUser(null)
@@ -98,11 +150,34 @@ export function ManualAwardClient() {
     setNote("")
     setEarnedAt(nowLocalISO())
     setSubmitted(false)
+    setDuplicateStatus({ kind: "idle" })
   }
 
-  function handleSubmit() {
-    if (!canSubmit) return
-    setSubmitted(true)
+  async function handleSubmit() {
+    if (!canSubmit || !selectedUser || !selectedAchievement) return
+
+    setSaving(true)
+    try {
+      const result = await awardAchievementAction({
+        user_id: selectedUser.id,
+        achievement_id: selectedAchievement.id,
+        earned_at: new Date(earnedAt).toISOString(),
+        source_type: "manual",
+        metadata: note ? { note } : null,
+      })
+
+      if (!result.success) {
+        toast.error(result.error)
+        return
+      }
+
+      setSubmitted(true)
+      router.refresh()
+    } catch {
+      toast.error("Something went wrong")
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (submitted && selectedUser && selectedAchievement) {
@@ -196,15 +271,31 @@ export function ManualAwardClient() {
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-[400px] p-0" align="start">
-                <Command>
-                  <CommandInput placeholder="Search users..." />
+                <Command shouldFilter={false}>
+                  <CommandInput
+                    placeholder="Search users..."
+                    value={searchQuery}
+                    onValueChange={handleUserSearch}
+                  />
                   <CommandList>
-                    <CommandEmpty>No users found.</CommandEmpty>
+                    {searching && (
+                      <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                        Searching...
+                      </div>
+                    )}
+                    {!searching && users.length === 0 && searchQuery.length >= 2 && (
+                      <CommandEmpty>No users found.</CommandEmpty>
+                    )}
+                    {!searching && searchQuery.length < 2 && (
+                      <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                        Type at least 2 characters to search
+                      </div>
+                    )}
                     <CommandGroup>
-                      {MOCK_PROFILES.map((profile) => (
+                      {users.map((profile) => (
                         <CommandItem
                           key={profile.id}
-                          value={`${profile.username} ${profile.email} ${profile.full_name ?? ""}`}
+                          value={profile.id}
                           onSelect={() => {
                             setSelectedUser(profile)
                             setUserOpen(false)
@@ -298,7 +389,7 @@ export function ManualAwardClient() {
                       No achievements found.
                     </CommandEmpty>
                     <CommandGroup>
-                      {MOCK_ACHIEVEMENTS.map((achievement) => (
+                      {initialAchievements.map((achievement) => (
                         <CommandItem
                           key={achievement.id}
                           value={`${achievement.name} ${achievement.slug}`}
@@ -375,10 +466,16 @@ export function ManualAwardClient() {
                   ? "border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950"
                   : duplicateStatus.kind === "duplicate"
                     ? "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950"
-                    : "hidden",
+                    : duplicateStatus.kind === "checking"
+                      ? "border-muted bg-muted/30"
+                      : "hidden",
               )}
             >
-              {duplicateStatus.kind === "clean" ? (
+              {duplicateStatus.kind === "checking" ? (
+                <span className="text-muted-foreground text-sm">
+                  Checking...
+                </span>
+              ) : duplicateStatus.kind === "clean" ? (
                 <>
                   <CheckCircle className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
                   <span className="text-emerald-800 dark:text-emerald-200">
@@ -402,6 +499,10 @@ export function ManualAwardClient() {
                     . Awarding again is not possible.
                   </span>
                 </>
+              ) : duplicateStatus.kind === "error" ? (
+                <span className="text-red-800 dark:text-red-200 text-sm">
+                  {duplicateStatus.message}
+                </span>
               ) : null}
             </div>
           )}
@@ -437,7 +538,7 @@ export function ManualAwardClient() {
 
           {/* Submit */}
           <Button disabled={!canSubmit} onClick={handleSubmit}>
-            Award Achievement
+            {saving ? "Awarding..." : "Award Achievement"}
           </Button>
         </CardContent>
       </Card>
