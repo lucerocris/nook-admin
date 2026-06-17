@@ -60,12 +60,6 @@ export function LoginForm({
         return
       }
 
-      if (role === "cafe_owner") {
-        router.push("/owner/dashboard")
-        router.refresh()
-        return
-      }
-
       await supabase.auth.signOut()
       setLoginError("No admin access for this account")
     } finally {

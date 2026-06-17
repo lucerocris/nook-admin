@@ -3,9 +3,7 @@
 import Link from "next/link"
 import {
   Flag,
-  IdentificationBadge,
   Storefront,
-  UserCircleDashed,
   WarningCircle,
 } from "@phosphor-icons/react"
 
@@ -37,21 +35,9 @@ export function QuickActions() {
           </Link>
         </Button>
         <Button variant="outline" className="w-full justify-start" asChild>
-          <Link href="/admin/owners">
-            <IdentificationBadge className="mr-1 size-4" />
-            Create Owner Account
-          </Link>
-        </Button>
-        <Button variant="outline" className="w-full justify-start" asChild>
           <Link href="/admin/cafes?filter=unclaimed">
             <WarningCircle className="mr-1 size-4" />
             View Unclaimed Listings
-          </Link>
-        </Button>
-        <Button variant="outline" className="w-full justify-start" asChild>
-          <Link href="/admin/owners?filter=never-logged-in">
-            <UserCircleDashed className="mr-1 size-4" />
-            Follow Up with Owners
           </Link>
         </Button>
       </CardContent>

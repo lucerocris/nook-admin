@@ -95,9 +95,12 @@ function SetPasswordForm({ className }: React.ComponentProps<"div">) {
     const userRole = role ?? data.user?.app_metadata?.role
     if (userRole === "superadmin") {
       router.push("/admin/dashboard")
-    } else {
-      router.push("/owner/dashboard")
+      router.refresh()
+      return
     }
+
+    await supabase.auth.signOut()
+    router.push("/login")
     router.refresh()
   }
 

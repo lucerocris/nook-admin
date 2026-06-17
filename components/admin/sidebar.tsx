@@ -7,7 +7,6 @@ import { usePathname, useRouter } from "next/navigation"
 import {
   SquaresFourIcon,
   StorefrontIcon,
-  IdentificationCardIcon,
   UsersIcon,
   TagIcon,
   TrophyIcon,
@@ -41,7 +40,6 @@ const navItems: NavItem[] = [
   { title: "Dashboard", url: "/admin/dashboard", icon: SquaresFourIcon },
   { title: "Cafes", url: "/admin/cafes", icon: StorefrontIcon },
   { title: "Claims", url: "/admin/claims", icon: ClipboardTextIcon },
-  { title: "Owners", url: "/admin/owners", icon: IdentificationCardIcon },
   { title: "Users", url: "/admin/users", icon: UsersIcon },
   { title: "Tags", url: "/admin/tags", icon: TagIcon },
   { title: "Achievements", url: "/admin/achievements", icon: TrophyIcon },

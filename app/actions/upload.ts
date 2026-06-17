@@ -47,7 +47,6 @@ export async function uploadCafeHeroAction(
   if (error) throw error
 
   revalidatePath(`/admin/cafes/${targetCafeId}/edit`)
-  revalidatePath("/owner/photos")
 
   return { url }
 }
@@ -96,7 +95,6 @@ export async function uploadCafePhotoAction(
   if (error) throw error
 
   revalidatePath(`/admin/cafes/${targetCafeId}/edit`)
-  revalidatePath("/owner/photos")
 
   return { url, total: heroCount + updated.length }
 }
@@ -146,7 +144,6 @@ export async function deleteCafePhotoAction(
   }
 
   revalidatePath(`/admin/cafes/${targetCafeId}/edit`)
-  revalidatePath("/owner/photos")
 }
 
 // ── REORDER CAFE PHOTOS ──────────────────────────────
@@ -178,7 +175,6 @@ export async function reorderCafePhotosAction(
   if (error) throw error
 
   revalidatePath(`/admin/cafes/${targetCafeId}/edit`)
-  revalidatePath("/owner/photos")
 
   return { hero, gallery }
 }
@@ -211,7 +207,6 @@ export async function uploadMenuItemImageAction(
   if (error) throw error
 
   revalidatePath(`/admin/cafes/${targetCafeId}/edit`)
-  revalidatePath("/owner/menu")
 
   return { url }
 }
@@ -234,5 +229,4 @@ export async function deleteMenuItemImageAction(
     .eq("id", menuItemId)
 
   revalidatePath(`/admin/cafes/${targetCafeId}/edit`)
-  revalidatePath("/owner/menu")
 }

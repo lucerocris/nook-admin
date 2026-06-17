@@ -320,7 +320,6 @@ export async function getReportById(id: string): Promise<ReportRow | null> {
   const reviewer = review ? Array.isArray(review.profiles) ? review.profiles[0] : review.profiles : null
   const cafe = Array.isArray(row.cafes) ? row.cafes[0] : row.cafes
   const reviewId = review?.id ?? null
-  const cafeId = cafe?.id ?? null
 
   const userIds = [reporter?.id, reviewer?.id].filter((x): x is string => Boolean(x))
 
@@ -334,17 +333,6 @@ export async function getReportById(id: string): Promise<ReportRow | null> {
         .order("created_at", { ascending: true })
     : Promise.resolve({ data: [], error: null })
 
-  // cafe_owner_cafe.owner_id has no FK to profiles, so we look up the
-  // owner_id first, then resolve the email in a second query.
-  const cafeOwnerLinkPromise = cafeId
-    ? supabase
-        .from("cafe_owner_cafe")
-        .select("owner_id")
-        .eq("cafe_id", cafeId)
-        .limit(1)
-        .maybeSingle()
-    : Promise.resolve({ data: null, error: null })
-
   const resolvedByProfilePromise = row.reviewed_by
     ? supabase
         .from("profiles")
@@ -356,34 +344,24 @@ export async function getReportById(id: string): Promise<ReportRow | null> {
   const [
     reviewCountsResult,
     historyResult,
-    cafeOwnerLinkResult,
     resolvedByResult,
   ] = await Promise.all([
     reviewCountsPromise,
     historyPromise,
-    cafeOwnerLinkPromise,
     resolvedByProfilePromise,
   ])
 
   if (historyResult.error) throw historyResult.error
-  if (cafeOwnerLinkResult.error && cafeOwnerLinkResult.error.code !== "PGRST116") {
-    throw cafeOwnerLinkResult.error
-  }
 
   const history = (historyResult.data ?? []) as unknown as HistoryRowDb[]
 
   // Collect distinct moderator_ids and resolved_by_id, then look up their
-  // profiles in a single batched query. Keeps round trips at 2 (history +
-  // moderator profiles) and 2 (link + owner email), all parallel.
+  // profiles in a single batched query.
   const moderatorIds = new Set<string>()
   for (const row of history) {
     if (row.moderator_id) moderatorIds.add(row.moderator_id)
   }
   if (row.reviewed_by) moderatorIds.add(row.reviewed_by)
-
-  const ownerId = (cafeOwnerLinkResult.data as { owner_id?: string } | null)
-    ?.owner_id
-  if (ownerId) moderatorIds.add(ownerId)
 
   const moderatorProfilesPromise = moderatorIds.size > 0
     ? supabase
@@ -399,12 +377,8 @@ export async function getReportById(id: string): Promise<ReportRow | null> {
     ProfileMini & { email?: string | null }
   >
   const moderatorProfileMap = new Map<string, ProfileMini>()
-  let ownerEmail: string | null = null
   for (const p of profileRows) {
     moderatorProfileMap.set(p.id, p)
-    if (ownerId && p.id === ownerId) {
-      ownerEmail = (p as ProfileMini & { email?: string | null }).email ?? null
-    }
   }
 
   return mapReportRow({
@@ -412,7 +386,7 @@ export async function getReportById(id: string): Promise<ReportRow | null> {
     reviewCounts: reviewCountsResult,
     history,
     moderatorProfiles: moderatorProfileMap,
-    ownerEmail,
+    ownerEmail: null,
     synthesizeEvents: true,
     resolvedByProfile: (resolvedByResult.data as never) ?? null,
   })

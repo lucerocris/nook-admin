@@ -10,7 +10,6 @@ import {
   DotsThree,
   PencilSimple,
   Eye,
-  IdentificationBadge,
   ArrowLineDown,
   ArrowLineUp,
   Trash,
@@ -102,7 +101,6 @@ function OwnerBadge({ claimed }: { claimed: boolean }) {
 function CafeActions({ cafe }: { cafe: CafeRow }) {
   const router = useRouter()
   const [isPending, startTransition] = React.useTransition()
-  const claimed = (cafe.cafe_owner_cafe?.length ?? 0) > 0
 
   function handleStatusChange(status: "active" | "inactive") {
     startTransition(async () => {
@@ -145,14 +143,6 @@ function CafeActions({ cafe }: { cafe: CafeRow }) {
             <Eye />
             Preview
           </DropdownMenuItem>
-          {!claimed && (
-            <DropdownMenuItem
-              onClick={() => router.push(`/admin/cafes/${cafe.id}/owner/new`)}
-            >
-              <IdentificationBadge />
-              Create Owner Account
-            </DropdownMenuItem>
-          )}
           <DropdownMenuSeparator />
           {cafe.status === "active" && (
             <DropdownMenuItem

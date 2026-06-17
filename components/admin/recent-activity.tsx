@@ -4,7 +4,6 @@ import {
   ChatCircle,
   PencilSimple,
   Storefront,
-  UserCircle,
 } from "@phosphor-icons/react"
 import { type Icon } from "@phosphor-icons/react"
 
@@ -28,16 +27,6 @@ const activityFeed: ActivityItem[] = [
     timestamp: "2 mins ago",
   },
   {
-    icon: UserCircle,
-    description: "Owner account created for Abaca Coffee",
-    timestamp: "1 hr ago",
-  },
-  {
-    icon: UserCircle,
-    description: "Cafe Laguna owner logged in for the first time",
-    timestamp: "2 hrs ago",
-  },
-  {
     icon: ChatCircle,
     description: "@jana_c left a 5-star review for The Grind",
     timestamp: "3 hrs ago",
@@ -49,18 +38,13 @@ const activityFeed: ActivityItem[] = [
   },
   {
     icon: PencilSimple,
-    description: "IT Park Brew owner updated operating hours",
+    description: "IT Park Brew operating hours updated",
     timestamp: "Yesterday",
   },
   {
     icon: Storefront,
     description: "Brewlab was published",
     timestamp: "2 days ago",
-  },
-  {
-    icon: UserCircle,
-    description: "Owner account created for Coffee Madness",
-    timestamp: "3 days ago",
   },
 ]
 

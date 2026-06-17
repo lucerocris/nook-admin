@@ -9,7 +9,6 @@ export default async function RootPage() {
 
   const role = user.app_metadata?.role
   if (role === "superadmin") redirect("/admin/dashboard")
-  if (role === "cafe_owner") redirect("/owner/dashboard")
 
   redirect("/login")
 }

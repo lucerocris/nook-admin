@@ -2614,15 +2614,6 @@ export function CafeEditorForm({
                         })}
                       </dd>
                     </div>
-                    <div className="flex items-center gap-6">
-                      <dt className="text-sm text-muted-foreground w-32 shrink-0">
-                        Owner
-                      </dt>
-                      <dd className="text-sm">
-                        {(cafe as Cafe & { cafe_owner_cafe?: { owner_id: string }[] })
-                          .cafe_owner_cafe?.[0]?.owner_id ?? "Unassigned"}
-                      </dd>
-                    </div>
                   </dl>
                 </CardContent>
               </Card>

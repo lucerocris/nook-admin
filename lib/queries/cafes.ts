@@ -29,29 +29,6 @@ export type Cafe = {
   created_at: string
 }
 
-export type OwnerCafeContext = {
-  cafeId: string
-  cafeName: string
-  status: "draft" | "active" | "inactive"
-}
-
-export type OwnerDashboardCafe = {
-  id: string
-  name: string
-  status: "draft" | "active" | "inactive"
-  rating: number | null
-  review_count: number
-  featured_image_url: string | null
-  neighborhood: string | null
-  city: string
-}
-
-export type OwnerPhotosCafe = {
-  id: string
-  featured_image_url: string | null
-  photo_urls: string[]
-}
-
 type CafeListFilters = {
   status?: string
   neighborhood?: string
@@ -67,7 +44,7 @@ function applyCafeListFilters<T extends {
 ) {
   let next = query
 
-  if (filters?.status && filters.status !== "all") {
+  if (filters?.status && filters?.status !== "all") {
     next = next.eq("status", filters.status)
   }
 
@@ -86,10 +63,7 @@ export async function getCafes(filters?: CafeListFilters) {
   const supabase = createAdminClient()
   let query = supabase
     .from("cafes")
-    .select(`
-      *,
-      cafe_owner_cafe ( owner_id )
-    `)
+    .select(`*`)
     .order("created_at", { ascending: false })
 
   query = applyCafeListFilters(query, filters)
@@ -188,8 +162,7 @@ export async function getCafeById(id: string) {
         id, name, description, price, is_highlight,
         image_url, category_id,
         menu_categories ( id, name )
-      ),
-      cafe_owner_cafe ( owner_id )
+      )
     `)
     .eq("id", id)
     .single()
@@ -234,136 +207,6 @@ export async function updateCafe(id: string, payload: Partial<Cafe>) {
 
   if (error) throw error
   return data
-}
-
-export async function getCafeForOwner(ownerUserId: string) {
-  const supabase = await createClient()
-
-  const { data: link } = await supabase
-    .from("cafe_owner_cafe")
-    .select("cafe_id")
-    .eq("owner_id", ownerUserId)
-    .maybeSingle()
-
-  if (!link) return null
-
-  const { data, error } = await supabase
-    .from("cafes")
-    .select(`
-      *,
-      cafe_tags ( tag_id, is_featured, tags (*) ),
-      menu_items (
-        id, name, description, price, is_highlight,
-        image_url, category_id,
-        menu_categories ( id, name, is_global ),
-        menu_item_variants (
-          id, label, price_override, price_modifier,
-          is_default, sort_order
-        )
-      )
-    `)
-    .eq("id", link.cafe_id)
-    .maybeSingle()
-
-  if (error) throw error
-  return data
-}
-
-export async function getOwnerCafeContextByOwnerUserId(
-  ownerUserId: string
-): Promise<OwnerCafeContext | null> {
-  const supabase = await createClient()
-
-  const { data: link, error: linkError } = await supabase
-    .from("cafe_owner_cafe")
-    .select("cafe_id")
-    .eq("owner_id", ownerUserId)
-    .maybeSingle()
-
-  if (linkError) throw linkError
-  if (!link) return null
-
-  const { data, error } = await supabase
-    .from("cafes")
-    .select("id, name, status")
-    .eq("id", link.cafe_id)
-    .maybeSingle()
-
-  if (error) throw error
-  if (!data) return null
-
-  return {
-    cafeId: data.id,
-    cafeName: data.name,
-    status: data.status,
-  }
-}
-
-export async function getOwnerDashboardCafeById(
-  cafeId: string
-): Promise<OwnerDashboardCafe> {
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from("cafes")
-    .select(
-      "id, name, status, rating, review_count, featured_image_url, neighborhood, city"
-    )
-    .eq("id", cafeId)
-    .single()
-
-  if (error) throw error
-  return data as OwnerDashboardCafe
-}
-
-export async function getOwnerAnalyticsSummaries(cafeId: string, daysBack: number) {
-  const supabase = createAdminClient()
-  
-  const dateBoundary = new Date()
-  dateBoundary.setDate(dateBoundary.getDate() - daysBack)
-  const targetDate = dateBoundary.toISOString().split('T')[0]
-
-  const { data, error } = await supabase
-    .from("cafe_analytics_summaries")
-    .select("summary_date, views_count, hours_checked_count, directions_tapped_count, favorites_count")
-    .eq("cafe_id", cafeId)
-    .gte("summary_date", targetDate)
-    .order("summary_date", { ascending: false })
-
-  if (error) throw error
-
-  const totals = data.reduce(
-    (acc, row) => ({
-      views: acc.views + (row.views_count || 0),
-      hours: acc.hours + (row.hours_checked_count || 0),
-      directions: acc.directions + (row.directions_tapped_count || 0),
-      favorites: acc.favorites + (row.favorites_count || 0),
-    }),
-    { views: 0, hours: 0, directions: 0, favorites: 0 }
-  )
-
-  return {
-    totals,
-    dailyData: data 
-  }
-}
-
-export async function getOwnerPhotosCafeById(
-  cafeId: string
-): Promise<OwnerPhotosCafe> {
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from("cafes")
-    .select("id, featured_image_url, photo_urls")
-    .eq("id", cafeId)
-    .single()
-
-  if (error) throw error
-
-  return {
-    id: data.id,
-    featured_image_url: data.featured_image_url,
-    photo_urls: Array.isArray(data.photo_urls) ? data.photo_urls : [],
-  }
 }
 
 export async function getDashboardStats() {

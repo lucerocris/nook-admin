@@ -36,38 +36,6 @@ export type Tag = {
   cafe_tags?: { count: number }[]
 }
 
-const OWNER_RESTRICTED_BEST_FOR_TAG_NAME_PARTS = ["specialty"]
-
-function normalizeTagValue(value: string) {
-  return value.trim().toLowerCase()
-}
-
-function normalizeCategoryValue(value: string) {
-  return normalizeTagValue(value).replace(/[\s-]+/g, "_")
-}
-
-function isBestForCategory(category: string) {
-  return normalizeCategoryValue(category) === "best_for"
-}
-
-function hasRestrictedBestForNamePart(name: string) {
-  const normalizedName = normalizeTagValue(name)
-  return OWNER_RESTRICTED_BEST_FOR_TAG_NAME_PARTS.some((part) =>
-    normalizedName.includes(part)
-  )
-}
-
-export function isSpecialtyTag(tag: Pick<Tag, "name" | "category">) {
-  return (
-    isBestForCategory(tag.category) &&
-    hasRestrictedBestForNamePart(tag.name)
-  )
-}
-
-export function filterOwnerAssignableTags(tags: Tag[]) {
-  return tags.filter((tag) => !isSpecialtyTag(tag))
-}
-
 export async function getAllTags(includeVibe = false) {
   const supabase = await createClient()
   let query = supabase
@@ -81,11 +49,6 @@ export async function getAllTags(includeVibe = false) {
   const { data, error } = await query
   if (error) throw error
   return (data ?? []) as Tag[]
-}
-
-export async function getOwnerAssignableTags() {
-  const tags = await getAllTags(false)
-  return filterOwnerAssignableTags(tags)
 }
 
 export async function getAllTagsAdmin(): Promise<Tag[]> {
@@ -171,7 +134,7 @@ export async function updateTag(
     .single()
 
   if (error) throw new Error(getErrorMessage(error, "Failed to update tag"))
-  return data as Tag
+  return data
 }
 
 export async function deleteTag(id: string): Promise<void> {
