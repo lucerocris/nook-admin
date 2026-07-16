@@ -1,67 +1,81 @@
 import { createAdminClient } from "@/lib/supabase/admin"
-import type { User } from "@supabase/supabase-js"
 
-// listUsers is paginated (default 50) — without paging, the Users page
-// silently truncates once the user base grows past one page.
-async function listAllUsers() {
-  const supabase = createAdminClient()
-  const perPage = 1000
-  const users: User[] = []
+export const USERS_PAGE_SIZE = 25
 
-  for (let page = 1; ; page++) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage })
-    if (error) throw error
-    users.push(...data.users)
-    if (data.users.length < perPage) break
-  }
+export type UserStatusFilter = "all" | "active" | "suspended"
+export type UserSort = "recent" | "reviews" | "az"
 
-  return users
+export type AppUser = {
+  id: string
+  email: string | null
+  full_name: string | null
+  username: string | null
+  avatar_url: string | null
+  is_suspended: boolean
+  created_at: string
+  review_count: number
+  fav_count: number
 }
 
-export async function getUsers() {
+export type GetUsersParams = {
+  q?: string
+  status?: UserStatusFilter
+  sort?: UserSort
+  page?: number
+}
+
+export type GetUsersResult = {
+  users: AppUser[]
+  total: number
+  page: number
+  pageSize: number
+  hasMore: boolean
+}
+
+// Shape of the get_admin_users_page jsonb payload. The admin client is not
+// parameterised with <Database>, so .rpc() returns `any` — this interface is
+// the only description of the payload and is not compiler-checked against SQL.
+type UsersPageRpc = {
+  users: Array<Omit<AppUser, "fav_count">>
+  total: number
+  has_more: boolean
+}
+
+// Was: every auth user (via a paging loop over the GoTrue admin API), every
+// profile, and every row of the reviews table — then filtered, joined and
+// counted in JS. get_admin_users_page does the search, status filter, sort,
+// review counts and pagination in one query.
+export async function getUsers({
+  q = "",
+  status = "all",
+  sort = "recent",
+  page = 1,
+}: GetUsersParams = {}): Promise<GetUsersResult> {
   const supabase = createAdminClient()
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1
 
-  const [
-    users,
-    profilesResult,
-    reviewCountsResult,
-  ] = await Promise.all([
-    listAllUsers(),
-    supabase
-      .from("profiles")
-      .select("id, full_name, username, avatar_url, is_suspended, created_at"),
-    supabase.from("reviews").select("user_id"),
-  ])
-
-  const { data: profiles, error: profilesError } = profilesResult
-  if (profilesError) throw profilesError
-
-  const { data: reviewCounts, error: reviewCountsError } = reviewCountsResult
-  if (reviewCountsError) throw reviewCountsError
-
-  const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile]))
-  const reviewCountMap = new Map<string, number>()
-
-  for (const review of reviewCounts ?? []) {
-    reviewCountMap.set(review.user_id, (reviewCountMap.get(review.user_id) ?? 0) + 1)
-  }
-
-  const appUsers = users.filter((u) => !u.app_metadata?.role)
-
-  return appUsers.map((user) => {
-    const profile = profileMap.get(user.id)
-    return {
-      id: user.id,
-      email: user.email,
-      full_name: profile?.full_name ?? null,
-      username: profile?.username ?? null,
-      avatar_url: profile?.avatar_url ?? null,
-      is_suspended: profile?.is_suspended ?? false,
-      created_at: user.created_at,
-      review_count: reviewCountMap.get(user.id) ?? 0,
-      fav_count: 0,
-    }
+  const { data, error } = await supabase.rpc("get_admin_users_page", {
+    p_q: q.trim() || null,
+    p_limit: USERS_PAGE_SIZE,
+    p_offset: (safePage - 1) * USERS_PAGE_SIZE,
+    p_status: status,
+    p_sort: sort,
   })
+
+  if (error) throw error
+
+  const result = data as UsersPageRpc
+
+  return {
+    // fav_count has no source: there is no favourites table in the schema. It
+    // was hardcoded to 0 before this change and still is — the Favorites
+    // column shows a placeholder, not real data.
+    users: result.users.map((user) => ({ ...user, fav_count: 0 })),
+    total: result.total,
+    page: safePage,
+    pageSize: USERS_PAGE_SIZE,
+    hasMore: result.has_more,
+  }
 }
 
 export async function suspendUser(userId: string, suspend: boolean) {

@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin"
+import { getAdminDashboardSummary } from "@/lib/queries/dashboard"
 import type {
   ReportRow,
   ReportStatus,
@@ -396,34 +397,15 @@ export async function getReportById(id: string): Promise<ReportRow | null> {
 // getReportsMetrics — sidebar badge + dashboard card
 // =============================================================================
 
+// Was 3 counts, and the admin layout and the dashboard page each called this
+// independently — 6 round trips per dashboard render. Now derived from the
+// request-cached summary, so layout + page share a single call.
 export async function getReportsMetrics(): Promise<ReportsMetrics> {
-  const supabase = createAdminClient()
-  const weekAgoIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-
-  const [pendingResult, underReviewResult, resolvedThisWeekResult] =
-    await Promise.all([
-      supabase
-        .from("review_reports")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "pending"),
-      supabase
-        .from("review_reports")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "under_review"),
-      supabase
-        .from("review_reports")
-        .select("id", { count: "exact", head: true })
-        .in("status", ["resolved", "rejected"])
-        .gte("reviewed_at", weekAgoIso),
-    ])
-
-  if (pendingResult.error) throw pendingResult.error
-  if (underReviewResult.error) throw underReviewResult.error
-  if (resolvedThisWeekResult.error) throw resolvedThisWeekResult.error
+  const summary = await getAdminDashboardSummary()
 
   return {
-    pendingCount: pendingResult.count ?? 0,
-    underReviewCount: underReviewResult.count ?? 0,
-    resolvedThisWeekCount: resolvedThisWeekResult.count ?? 0,
+    pendingCount: summary.reports.by_status.pending ?? 0,
+    underReviewCount: summary.reports.by_status.under_review ?? 0,
+    resolvedThisWeekCount: summary.reports.resolved_last_7d,
   }
 }

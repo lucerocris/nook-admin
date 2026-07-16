@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { getAdminDashboardSummary } from "@/lib/queries/dashboard"
 
 export type Cafe = {
   id: string
@@ -209,43 +210,27 @@ export async function updateCafe(id: string, payload: Partial<Cafe>) {
   return data
 }
 
-export async function getDashboardStats() {
-  const supabase = createAdminClient()
-  const weekAgoIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+export type DashboardStats = {
+  totalCafes: number
+  totalUsers: number
+  reviewsThisWeek: number
+  activeOwners: number
+  unclaimedCafes: number
+}
 
-  const [cafes, users, reviews, owners, allCafes, linkedCafes] =
-    await Promise.all([
-      supabase.from("cafes")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "active"),
-      supabase.from("profiles")
-        .select("id", { count: "exact", head: true }),
-      supabase.from("reviews")
-        .select("id", { count: "exact", head: true })
-        .gte("created_at", weekAgoIso),
-      supabase.from("cafe_owner_cafe")
-        .select("owner_id", { count: "exact", head: true }),
-      supabase.from("cafes")
-        .select("id", { count: "exact", head: true }),
-      supabase.from("cafe_owner_cafe")
-        .select("cafe_id"),
-    ])
-
-  if (cafes.error) throw cafes.error
-  if (users.error) throw users.error
-  if (reviews.error) throw reviews.error
-  if (owners.error) throw owners.error
-  if (allCafes.error) throw allCafes.error
-  if (linkedCafes.error) throw linkedCafes.error
-
-  const linkedCafeIds = new Set((linkedCafes.data ?? []).map((row) => row.cafe_id))
-  const unclaimedCount = Math.max(0, (allCafes.count ?? 0) - linkedCafeIds.size)
+// Was 6 queries, one of which pulled every cafe_owner_cafe row over the wire
+// just to count distinct cafe_ids in JS. get_admin_dashboard_summary computes
+// all of it in one pass.
+export async function getDashboardStats(): Promise<DashboardStats> {
+  const summary = await getAdminDashboardSummary()
 
   return {
-    totalCafes:       cafes.count ?? 0,
-    totalUsers:       users.count ?? 0,
-    reviewsThisWeek:  reviews.count ?? 0,
-    activeOwners:     owners.count ?? 0,
-    unclaimedCafes:   unclaimedCount,
+    totalCafes:      summary.cafes.active,
+    totalUsers:      summary.users.total,
+    reviewsThisWeek: summary.reviews.last_7d,
+    // Now counts DISTINCT owners. The old query counted cafe_owner_cafe rows,
+    // so an owner linked to several cafes was counted once per cafe.
+    activeOwners:    summary.owners,
+    unclaimedCafes:  summary.cafes.unclaimed,
   }
 }

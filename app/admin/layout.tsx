@@ -1,7 +1,6 @@
 import type { Metadata } from "next"
 import { AdminSidebar } from "@/components/admin/sidebar"
-import { createAdminClient } from "@/lib/supabase/admin"
-import { getReportsMetrics } from "@/lib/queries/reports"
+import { getAdminDashboardSummary } from "@/lib/queries/dashboard"
 import { Separator } from "@/components/ui/separator"
 import {
   SidebarInset,
@@ -21,18 +20,13 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode
 }) {
-  const supabase = createAdminClient()
+  // Both sidebar badges come from the one request-cached summary. This used to
+  // be a claims count plus getReportsMetrics()' three counts, on every admin
+  // page, with the dashboard page then repeating the latter three.
+  const summary = await getAdminDashboardSummary()
 
-  const [{ count, error }, metrics] = await Promise.all([
-    supabase
-      .from("cafe_claims")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "pending"),
-    getReportsMetrics(),
-  ])
-
-  const pendingClaimsCount = error ? 0 : count ?? 0
-  const pendingReportsCount = metrics.pendingCount
+  const pendingClaimsCount = summary.claims.by_status.pending ?? 0
+  const pendingReportsCount = summary.reports.by_status.pending ?? 0
 
   return (
     <SidebarProvider>

@@ -72,56 +72,41 @@ export async function getCrawlTiers(crawlId: string): Promise<CrawlTier[]> {
   return (data ?? []) as CrawlTier[]
 }
 
+// Shape of the get_crawl_stats jsonb payload. The RPC returns jsonb, so the
+// client types it as `any` — this interface is the only thing describing it.
+type CrawlStatsRpc = {
+  registrants: number
+  stamps_total: number
+  tiers: Array<{
+    name: string
+    tier_order: number
+    registrants_at_tier: number
+  }>
+}
+
 export async function getCrawlStats(crawlId: string): Promise<CrawlStats> {
   const supabase = createAdminClient()
 
-  const [registrantsResult, stampsResult, tiersResult] = await Promise.all([
-    supabase
-      .from("crawl_registrations")
-      .select("id", { count: "exact", head: true })
-      .eq("crawl_id", crawlId),
-    supabase
-      .from("crawl_stamps")
-      .select("id", { count: "exact", head: true })
-      .eq("crawl_id", crawlId),
-    supabase
-      .from("crawl_tiers")
-      .select(`
-        name,
-        tier_order,
-        id
-      `)
-      .eq("crawl_id", crawlId)
-      .order("tier_order", { ascending: true }),
-  ])
-
-  if (registrantsResult.error) throw registrantsResult.error
-  if (stampsResult.error) throw stampsResult.error
-  if (tiersResult.error) throw tiersResult.error
-
-  const tiers = (tiersResult.data ?? []) as Array<{ name: string; tier_order: number; id: string }>
-
-  const tierCompletionPromises = tiers.map(async (tier) => {
-    const { count, error } = await supabase
-      .from("crawl_registrations")
-      .select("id", { count: "exact", head: true })
-      .eq("crawl_id", crawlId)
-      .eq("highest_tier_id", tier.id)
-
-    if (error) throw error
-    return {
-      name: tier.name,
-      tier_order: tier.tier_order,
-      completions: count ?? 0,
-    }
+  // Was 3 + N queries (one count per tier). get_crawl_stats does the per-tier
+  // counts in a single GROUP BY on highest_tier_id.
+  const { data, error } = await supabase.rpc("get_crawl_stats", {
+    p_crawl_id: crawlId,
   })
 
-  const tierBreakdown = await Promise.all(tierCompletionPromises)
+  if (error) throw error
+
+  const stats = data as CrawlStatsRpc
 
   return {
-    totalRegistrants: registrantsResult.count ?? 0,
-    totalStamps: stampsResult.count ?? 0,
-    tierBreakdown,
+    totalRegistrants: stats.registrants,
+    totalStamps: stats.stamps_total,
+    // registrants_at_tier counts registrations whose highest_tier_id is exactly
+    // this tier — not cumulative, matching the previous per-tier count.
+    tierBreakdown: stats.tiers.map((tier) => ({
+      name: tier.name,
+      tier_order: tier.tier_order,
+      completions: tier.registrants_at_tier,
+    })),
   }
 }
 

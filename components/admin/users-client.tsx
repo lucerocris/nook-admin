@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
   MagnifyingGlass,
   DotsThree,
@@ -50,20 +51,9 @@ import {
   suspendUserAction,
   deleteUserAction,
 } from "@/app/admin/users/actions"
+import type { AppUser, UserSort, UserStatusFilter } from "@/lib/queries/users"
 
 type UserStatus = "Active" | "Suspended"
-
-interface AppUser {
-  id: string
-  email: string | undefined
-  full_name: string | null
-  username: string | null
-  avatar_url: string | null
-  is_suspended: boolean
-  created_at: string
-  review_count: number
-  fav_count: number
-}
 
 function getInitials(user: AppUser) {
   if (user.full_name) {
@@ -292,39 +282,74 @@ function UserActions({ user }: { user: AppUser }) {
   )
 }
 
-export function UsersClient({ users }: { users: AppUser[] }) {
-  const [search, setSearch] = React.useState("")
-  const [statusFilter, setStatusFilter] = React.useState("all")
-  const [sort, setSort] = React.useState("recent")
+export function UsersClient({
+  users,
+  total,
+  page,
+  pageSize,
+  hasMore,
+  search,
+  status,
+  sort,
+}: {
+  users: AppUser[]
+  total: number
+  page: number
+  pageSize: number
+  hasMore: boolean
+  search: string
+  status: UserStatusFilter
+  sort: UserSort
+}) {
+  const router = useRouter()
+  const params = useSearchParams()
 
-  const filtered = users
-    .filter((user) => {
-      const matchesSearch =
-        search === "" ||
-        getDisplayName(user).toLowerCase().includes(search.toLowerCase()) ||
-        (user.email?.toLowerCase().includes(search.toLowerCase()) ?? false)
+  // Search/filter/sort/paging are resolved by the server now, so they live in
+  // the URL rather than component state. `users` is already the current page.
+  const updateParam = React.useCallback(
+    (key: string, value: string, resetPage = true) => {
+      const next = new URLSearchParams(params.toString())
+      if (value && value !== "all" && value !== "recent") {
+        next.set(key, value)
+      } else {
+        next.delete(key)
+      }
+      if (resetPage) next.delete("page")
+      const query = next.toString()
+      router.push(query ? `/admin/users?${query}` : "/admin/users")
+    },
+    [params, router]
+  )
 
-      const matchesStatus =
-        statusFilter === "all" ||
-        (statusFilter === "active" && !user.is_suspended) ||
-        (statusFilter === "suspended" && user.is_suspended)
+  // Debounced so a keystroke does not fire a query per character. The server
+  // now does the filtering, so each change is a real round trip.
+  const [searchDraft, setSearchDraft] = React.useState(search)
+  const isFirstRender = React.useRef(true)
 
-      return matchesSearch && matchesStatus
-    })
-    .sort((a, b) => {
-      if (sort === "recent") {
-        return (
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        )
-      }
-      if (sort === "reviews") {
-        return b.review_count - a.review_count
-      }
-      if (sort === "az") {
-        return getDisplayName(a).localeCompare(getDisplayName(b))
-      }
-      return 0
-    })
+  React.useEffect(() => {
+    setSearchDraft(search)
+  }, [search])
+
+  React.useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
+    if (searchDraft === search) return
+    const timer = setTimeout(() => updateParam("search", searchDraft), 300)
+    return () => clearTimeout(timer)
+  }, [searchDraft, search, updateParam])
+
+  function goToPage(nextPage: number) {
+    const next = new URLSearchParams(params.toString())
+    if (nextPage > 1) next.set("page", String(nextPage))
+    else next.delete("page")
+    const query = next.toString()
+    router.push(query ? `/admin/users?${query}` : "/admin/users")
+  }
+
+  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1
+  const rangeEnd = Math.min(page * pageSize, total)
 
   return (
     <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 px-4 py-6 lg:px-6">
@@ -345,12 +370,15 @@ export function UsersClient({ users }: { users: AppUser[] }) {
           <Input
             className="pl-8"
             placeholder="Search by name or email..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchDraft}
+            onChange={(e) => setSearchDraft(e.target.value)}
           />
         </div>
 
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <Select
+          value={status}
+          onValueChange={(v) => updateParam("status", v)}
+        >
           <SelectTrigger className="w-full sm:w-[160px]">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
@@ -361,7 +389,7 @@ export function UsersClient({ users }: { users: AppUser[] }) {
           </SelectContent>
         </Select>
 
-        <Select value={sort} onValueChange={setSort}>
+        <Select value={sort} onValueChange={(v) => updateParam("sort", v)}>
           <SelectTrigger className="w-full sm:w-[180px]">
             <SelectValue placeholder="Sort" />
           </SelectTrigger>
@@ -388,7 +416,7 @@ export function UsersClient({ users }: { users: AppUser[] }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map((user) => (
+            {users.map((user) => (
               <TableRow key={user.id}>
                 <TableCell>
                   <div className="flex items-center gap-3">
@@ -430,6 +458,33 @@ export function UsersClient({ users }: { users: AppUser[] }) {
             ))}
           </TableBody>
         </Table>
+      </div>
+
+      {/* Section 4 — Pagination */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-muted-foreground text-sm tabular-nums">
+          {total === 0
+            ? "No users found"
+            : `Showing ${rangeStart}–${rangeEnd} of ${total}`}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page <= 1}
+            onClick={() => goToPage(page - 1)}
+          >
+            Previous
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!hasMore}
+            onClick={() => goToPage(page + 1)}
+          >
+            Next
+          </Button>
+        </div>
       </div>
     </div>
   )
