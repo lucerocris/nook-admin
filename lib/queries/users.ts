@@ -1,25 +1,37 @@
 import { createAdminClient } from "@/lib/supabase/admin"
+import type { User } from "@supabase/supabase-js"
+
+// listUsers is paginated (default 50) — without paging, the Users page
+// silently truncates once the user base grows past one page.
+async function listAllUsers() {
+  const supabase = createAdminClient()
+  const perPage = 1000
+  const users: User[] = []
+
+  for (let page = 1; ; page++) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage })
+    if (error) throw error
+    users.push(...data.users)
+    if (data.users.length < perPage) break
+  }
+
+  return users
+}
 
 export async function getUsers() {
   const supabase = createAdminClient()
 
   const [
-    usersResult,
+    users,
     profilesResult,
     reviewCountsResult,
   ] = await Promise.all([
-    supabase.auth.admin.listUsers(),
+    listAllUsers(),
     supabase
       .from("profiles")
       .select("id, full_name, username, avatar_url, is_suspended, created_at"),
     supabase.from("reviews").select("user_id"),
   ])
-
-  const {
-    data: { users },
-    error: usersError,
-  } = usersResult
-  if (usersError) throw usersError
 
   const { data: profiles, error: profilesError } = profilesResult
   if (profilesError) throw profilesError
