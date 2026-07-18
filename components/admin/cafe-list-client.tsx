@@ -197,12 +197,14 @@ function CafeActions({ cafe }: { cafe: CafeRow }) {
 export function CafeListClient({
   cafes,
   tagOptions,
+  neighborhoodOptions,
   page,
   total,
   totalPages,
 }: {
   cafes: CafeRow[]
   tagOptions: TagOption[]
+  neighborhoodOptions: string[]
   page: number
   total: number
   totalPages: number
@@ -210,24 +212,58 @@ export function CafeListClient({
   const router = useRouter()
   const params = useSearchParams()
 
-  function pushWithParams(nextParams: URLSearchParams) {
-    const query = nextParams.toString()
-    router.push(query ? `/admin/cafes?${query}` : "/admin/cafes")
-  }
+  const pushWithParams = React.useCallback(
+    (nextParams: URLSearchParams) => {
+      const query = nextParams.toString()
+      router.push(query ? `/admin/cafes?${query}` : "/admin/cafes")
+    },
+    [router]
+  )
 
-  function updateFilterParam(key: string, value: string) {
-    const p = new URLSearchParams(params.toString())
-    if (value && value !== "all") {
-      p.set(key, value)
-    } else {
-      p.delete(key)
+  // `defaultValue` is the key the param drops back to, so it never has to be
+  // spelled out in the URL — keeps a default-state filter bar at /admin/cafes.
+  const updateFilterParam = React.useCallback(
+    (key: string, value: string, defaultValue = "all") => {
+      const p = new URLSearchParams(params.toString())
+      if (value && value !== defaultValue) {
+        p.set(key, value)
+      } else {
+        p.delete(key)
+      }
+      // Any filter change invalidates the current offset: page 4 of the old
+      // result set is usually past the end of the new one.
+      p.delete("page")
+      pushWithParams(p)
+    },
+    [params, pushWithParams]
+  )
+
+  const searchParam = params.get("search") ?? ""
+  const [searchInput, setSearchInput] = React.useState(searchParam)
+  // Distinguishes the user typing from the URL changing underneath us (back
+  // button, filter reset) — without it, the debounce would fight navigation by
+  // re-pushing the stale input.
+  const isTypingRef = React.useRef(false)
+
+  React.useEffect(() => {
+    if (!isTypingRef.current) {
+      setSearchInput(searchParam)
+      return
     }
-    p.set("page", "1")
-    pushWithParams(p)
-  }
+    if (searchInput === searchParam) {
+      isTypingRef.current = false
+      return
+    }
+    const timer = setTimeout(() => {
+      isTypingRef.current = false
+      updateFilterParam("search", searchInput, "")
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchInput, searchParam, updateFilterParam])
 
   function handleSearch(value: string) {
-    updateFilterParam("search", value)
+    isTypingRef.current = true
+    setSearchInput(value)
   }
 
   function handleStatus(value: string) {
@@ -240,6 +276,18 @@ export function CafeListClient({
 
   function handleTag(value: string) {
     updateFilterParam("tag", value)
+  }
+
+  function handleFeatured(value: string) {
+    updateFilterParam("featured", value)
+  }
+
+  function handleOwner(value: string) {
+    updateFilterParam("owner", value)
+  }
+
+  function handleSort(value: string) {
+    updateFilterParam("sort", value, "recent")
   }
 
   function handlePage(nextPage: number) {
@@ -279,20 +327,20 @@ export function CafeListClient({
           <Input
             className="pl-8"
             placeholder="Search cafes..."
-            defaultValue={params.get("search") ?? ""}
+            value={searchInput}
             onChange={(e) => handleSearch(e.target.value)}
           />
         </div>
 
         <Select
-          defaultValue={params.get("status") ?? "all"}
+          value={params.get("status") ?? "all"}
           onValueChange={handleStatus}
         >
           <SelectTrigger className="w-[160px]">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="all">All statuses</SelectItem>
             <SelectItem value="active">Active</SelectItem>
             <SelectItem value="draft">Draft</SelectItem>
             <SelectItem value="inactive">Inactive</SelectItem>
@@ -300,34 +348,31 @@ export function CafeListClient({
         </Select>
 
         <Select
-          defaultValue={params.get("neighborhood") ?? "all"}
+          value={params.get("neighborhood") ?? "all"}
           onValueChange={handleNeighborhood}
         >
           <SelectTrigger className="w-[160px]">
             <SelectValue placeholder="Area" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="it-park">IT Park</SelectItem>
-            <SelectItem value="ayala">Ayala</SelectItem>
-            <SelectItem value="lahug">Lahug</SelectItem>
-            <SelectItem value="talamban">Talamban</SelectItem>
-            <SelectItem value="mango">Mango</SelectItem>
-            <SelectItem value="mandaue">Mandaue</SelectItem>
-            <SelectItem value="south-cebu">South Cebu</SelectItem>
-            <SelectItem value="other">Other</SelectItem>
+            <SelectItem value="all">All areas</SelectItem>
+            {neighborhoodOptions.map((neighborhood) => (
+              <SelectItem key={neighborhood} value={neighborhood}>
+                {neighborhood}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
 
         <Select
-          defaultValue={params.get("tag") ?? "all"}
+          value={params.get("tag") ?? "all"}
           onValueChange={handleTag}
         >
           <SelectTrigger className="w-[160px]">
             <SelectValue placeholder="Tag" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="all">All tags</SelectItem>
             {tagOptions.map((tag) => (
               <SelectItem key={tag.id} value={tag.id}>
                 {tag.name}
@@ -336,7 +381,38 @@ export function CafeListClient({
           </SelectContent>
         </Select>
 
-        <Select>
+        <Select
+          value={params.get("featured") ?? "all"}
+          onValueChange={handleFeatured}
+        >
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder="Featured" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Featured &amp; not</SelectItem>
+            <SelectItem value="featured">Featured only</SelectItem>
+            <SelectItem value="not-featured">Not featured</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={params.get("owner") ?? "all"}
+          onValueChange={handleOwner}
+        >
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder="Owner" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All owners</SelectItem>
+            <SelectItem value="claimed">Claimed</SelectItem>
+            <SelectItem value="unclaimed">Unclaimed</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={params.get("sort") ?? "recent"}
+          onValueChange={handleSort}
+        >
           <SelectTrigger className="w-[160px]">
             <SelectValue placeholder="Sort" />
           </SelectTrigger>
@@ -344,7 +420,6 @@ export function CafeListClient({
             <SelectItem value="recent">Recently Added</SelectItem>
             <SelectItem value="az">A–Z</SelectItem>
             <SelectItem value="rating">Highest Rated</SelectItem>
-            <SelectItem value="unclaimed">Unclaimed First</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -378,12 +453,22 @@ export function CafeListClient({
                       <div className="size-10 rounded-md bg-muted shrink-0" aria-hidden="true" />
                     )}
                     <div className="flex flex-col">
-                      <Link
-                        href={`/admin/cafes/${cafe.id}`}
-                        className="font-medium text-sm hover:underline underline-offset-2"
-                      >
-                        {cafe.name}
-                      </Link>
+                      <span className="flex items-center gap-1.5">
+                        <Link
+                          href={`/admin/cafes/${cafe.id}`}
+                          className="font-medium text-sm hover:underline underline-offset-2"
+                        >
+                          {cafe.name}
+                        </Link>
+                        {cafe.is_featured && (
+                          <Badge
+                            variant="outline"
+                            className="text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800"
+                          >
+                            Featured
+                          </Badge>
+                        )}
+                      </span>
                       <span className="text-xs text-muted-foreground">
                         {cafe.neighborhood ?? cafe.city}
                       </span>

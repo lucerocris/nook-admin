@@ -34,8 +34,19 @@ type CafeListFilters = {
   status?: string
   neighborhood?: string
   search?: string
+  featured?: string
 }
 
+// PostgREST treats these as literal characters inside an ilike pattern, so a
+// search for "100% arabica" would otherwise match far more than it should.
+function escapeLikePattern(value: string) {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`)
+}
+
+// Neighborhood is intentionally NOT handled here — it is resolved to cafe ids
+// upstream (see resolveNeighborhoodCafeIds). The column is dirty free text
+// (" Lahug" vs "Lahug"), and PostgREST's `in.()` list parser strips leading
+// whitespace from each element, so filtering the column directly drops rows.
 function applyCafeListFilters<T extends {
   eq: (column: string, value: unknown) => T
   ilike: (column: string, pattern: string) => T
@@ -49,15 +60,85 @@ function applyCafeListFilters<T extends {
     next = next.eq("status", filters.status)
   }
 
-  if (filters?.neighborhood && filters.neighborhood !== "all") {
-    next = next.eq("neighborhood", filters.neighborhood)
+  if (filters?.featured === "featured") {
+    next = next.eq("is_featured", true)
+  } else if (filters?.featured === "not-featured") {
+    next = next.eq("is_featured", false)
   }
 
   if (filters?.search) {
-    next = next.ilike("name", `%${filters.search}%`)
+    next = next.ilike("name", `%${escapeLikePattern(filters.search)}%`)
   }
 
   return next
+}
+
+export type NeighborhoodOption = {
+  /** Trimmed, canonical spelling — what the URL and the dropdown carry. */
+  value: string
+  /** Every raw spelling in the column that trims to `value`. */
+  variants: string[]
+}
+
+// The Area dropdown used to be a hardcoded list of slugs ("it-park") while the
+// column holds free text ("IT Park"), so every area filter matched zero rows.
+// Deriving the options from the data keeps them in sync with what admins type.
+export async function getCafeNeighborhoods(): Promise<NeighborhoodOption[]> {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from("cafes")
+    .select("neighborhood")
+    .not("neighborhood", "is", null)
+
+  if (error) throw error
+
+  const byCanonical = new Map<string, Set<string>>()
+  for (const row of data ?? []) {
+    const raw = row.neighborhood as string | null
+    if (!raw) continue
+    const canonical = raw.trim()
+    if (!canonical) continue
+
+    const variants = byCanonical.get(canonical) ?? new Set<string>()
+    variants.add(raw)
+    byCanonical.set(canonical, variants)
+  }
+
+  return Array.from(byCanonical.entries())
+    .map(([value, variants]) => ({ value, variants: Array.from(variants) }))
+    .sort((a, b) => a.value.localeCompare(b.value))
+}
+
+// Resolves a trimmed neighborhood label to the exact cafe ids that carry it,
+// tolerating the column's whitespace variants. The ilike is a coarse superset
+// pass (it also matches " Lahug" and "Lahug "); the trim comparison in JS makes
+// it exact. Matching on ids sidesteps the `in.()` whitespace-stripping bug.
+async function resolveNeighborhoodCafeIds(
+  supabase: ReturnType<typeof createAdminClient>,
+  neighborhood: string
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("cafes")
+    .select("id, neighborhood")
+    .ilike("neighborhood", `%${escapeLikePattern(neighborhood)}%`)
+
+  if (error) throw error
+
+  return (data ?? [])
+    .filter((row) => (row.neighborhood as string | null)?.trim() === neighborhood)
+    .map((row) => row.id as string)
+}
+
+export type CafeSort = "recent" | "az" | "rating"
+
+const CAFE_SORTS: Record<CafeSort, { column: string; ascending: boolean }> = {
+  recent: { column: "created_at", ascending: false },
+  az: { column: "name", ascending: true },
+  rating: { column: "rating", ascending: false },
+}
+
+function resolveSort(sort?: string) {
+  return CAFE_SORTS[sort as CafeSort] ?? CAFE_SORTS.recent
 }
 
 export async function getCafes(filters?: CafeListFilters) {
@@ -76,6 +157,8 @@ export async function getCafes(filters?: CafeListFilters) {
 
 export async function getCafesPage(filters?: CafeListFilters & {
   tagId?: string
+  owner?: string
+  sort?: string
   page?: number
   pageSize?: number
 }) {
@@ -85,19 +168,70 @@ export async function getCafesPage(filters?: CafeListFilters & {
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
 
+  const emptyPage = {
+    cafes: [] as Array<Cafe & { cafe_owner_cafe: { owner_id: string }[] | null }>,
+    total: 0,
+    page,
+    pageSize,
+    totalPages: 0,
+  }
+
   const shouldFilterByTag = Boolean(filters?.tagId && filters.tagId !== "all")
-  const tagCafeIdsPromise = shouldFilterByTag
-    ? supabase
-      .from("cafe_tags")
-      .select("cafe_id")
-      .eq("tag_id", filters?.tagId as string)
-    : Promise.resolve({ data: null, error: null })
+  const shouldFilterByNeighborhood = Boolean(
+    filters?.neighborhood && filters.neighborhood !== "all"
+  )
+  const ownerFilter = filters?.owner === "claimed" || filters?.owner === "unclaimed"
+    ? filters.owner
+    : null
+
+  const [tagRows, claimedRows, neighborhoodIds] = await Promise.all([
+    shouldFilterByTag
+      ? supabase.from("cafe_tags").select("cafe_id").eq("tag_id", filters?.tagId as string)
+      : Promise.resolve({ data: null, error: null }),
+    ownerFilter
+      ? supabase.from("cafe_owner_cafe").select("cafe_id")
+      : Promise.resolve({ data: null, error: null }),
+    shouldFilterByNeighborhood
+      ? resolveNeighborhoodCafeIds(supabase, filters!.neighborhood as string)
+      : Promise.resolve(null),
+  ])
+
+  if (tagRows.error) throw tagRows.error
+  if (claimedRows.error) throw claimedRows.error
+
+  // The tag, neighborhood, and owner filters all restrict by cafe id.
+  // Intersecting them here rather than stacking .in() calls keeps the semantics
+  // obvious and lets "unclaimed" subtract from an allowlist instead of needing
+  // a not.in().
+  let allowedIds: string[] | null = null
+  const intersect = (ids: string[]) => {
+    const next = new Set(ids)
+    allowedIds = allowedIds === null ? ids : allowedIds.filter((id) => next.has(id))
+  }
+
+  if (shouldFilterByTag) {
+    intersect(Array.from(new Set((tagRows.data ?? []).map((row) => row.cafe_id as string))))
+  }
+
+  if (shouldFilterByNeighborhood) {
+    intersect(neighborhoodIds ?? [])
+  }
+
+  const claimedIds = Array.from(
+    new Set((claimedRows.data ?? []).map((row) => row.cafe_id as string))
+  )
+
+  if (ownerFilter === "claimed") {
+    intersect(claimedIds)
+  }
+
+  if (allowedIds !== null && (allowedIds as string[]).length === 0) return emptyPage
+
+  const sort = resolveSort(filters?.sort)
 
   let countQuery = supabase
     .from("cafes")
     .select("id", { count: "exact", head: true })
-
-  countQuery = applyCafeListFilters(countQuery, filters)
 
   let dataQuery = supabase
     .from("cafes")
@@ -109,32 +243,27 @@ export async function getCafesPage(filters?: CafeListFilters & {
       featured_image_url,
       status,
       rating,
+      is_featured,
       cafe_owner_cafe ( owner_id )
     `)
-    .order("created_at", { ascending: false })
+    .order(sort.column, { ascending: sort.ascending, nullsFirst: false })
     .range(from, to)
 
+  countQuery = applyCafeListFilters(countQuery, filters)
   dataQuery = applyCafeListFilters(dataQuery, filters)
-  const { data: cafeTagRows, error: cafeTagError } = await tagCafeIdsPromise
-  if (cafeTagError) throw cafeTagError
 
-  const tagCafeIds = shouldFilterByTag
-    ? Array.from(new Set((cafeTagRows ?? []).map((row) => row.cafe_id)))
-    : null
-
-  if (shouldFilterByTag && (tagCafeIds?.length ?? 0) === 0) {
-    return {
-      cafes: [] as Array<Cafe & { cafe_owner_cafe: { owner_id: string }[] | null }>,
-      total: 0,
-      page,
-      pageSize,
-      totalPages: 0,
-    }
+  if (allowedIds !== null) {
+    countQuery = countQuery.in("id", allowedIds)
+    dataQuery = dataQuery.in("id", allowedIds)
   }
 
-  if (tagCafeIds) {
-    countQuery = countQuery.in("id", tagCafeIds)
-    dataQuery = dataQuery.in("id", tagCafeIds)
+  // "unclaimed" subtracts the claimed set from whatever is left after the other
+  // filters. An empty claimed set means nothing to exclude — and `not.in.()`
+  // is not valid PostgREST, so it has to be skipped rather than sent empty.
+  if (ownerFilter === "unclaimed" && claimedIds.length > 0) {
+    const exclusion = `(${claimedIds.join(",")})`
+    countQuery = countQuery.not("id", "in", exclusion)
+    dataQuery = dataQuery.not("id", "in", exclusion)
   }
 
   const [countResult, dataResult] = await Promise.all([countQuery, dataQuery])
