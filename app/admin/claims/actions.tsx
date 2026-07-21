@@ -9,6 +9,11 @@ import CafeClaimRejectedEmail from "@/emails/CafeClaimRejectedEmail";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+// Verified Resend sender on the Nook domain. Kept on nookph.app so the From
+// domain matches the brand and the links inside the mail — a mismatched sender
+// domain is a spam signal, which is what the old surgestudio.tech address hit.
+const MAIL_FROM = process.env.MAIL_FROM ?? "Nook <noreply@nookph.app>";
+
 type ClaimStatus = "under_review" | "approved" | "rejected";
 type AuditLogMetadata = Record<string, string | number | boolean | null>;
 
@@ -199,28 +204,48 @@ export async function approveClaimAction(claimId: string) {
       .single();
 
     if (ownerProfile?.email && cafeData?.name) {
-      const dashboardUrl = `${process.env.BUSINESS_SITE_URL ?? "https://nook.com"}/owner/dashboard`;
-      const { data: emailData, error: emailError } = await resend.emails.send({
-        from: "Nook <noreply@surgestudio.tech>",
-        to: [ownerProfile.email],
-        subject: `Your claim for ${cafeData.name} has been approved!`,
-        react: (
-          <CafeClaimApprovedEmail
-            ownerName={ownerProfile.full_name ?? "there"}
-            cafeName={cafeData.name}
-            dashboardUrl={dashboardUrl}
-            email={ownerProfile.email}
-          />
-        ),
-      });
+      // BUSINESS_SITE_URL previously fell back to "https://nook.com" — a domain
+      // Nook does not own — so whenever the var was unset (it is documented
+      // nowhere and was absent from every env file) every approved owner got an
+      // email whose "Go to dashboard" button 404'd on a stranger's site.
+      // Fail loudly instead of silently shipping a dead link.
+      const businessSiteUrl = process.env.BUSINESS_SITE_URL?.replace(/\/+$/, "");
 
-      if (emailError) {
-        console.error("[EMAIL] Failed to send approval email:", {
-          name: emailError.name,
-          message: emailError.message,
+      if (!businessSiteUrl) {
+        console.error(
+          "[EMAIL] BUSINESS_SITE_URL is not set — approval email not sent. " +
+            "Set it (e.g. https://business.nookph.app) so the dashboard link resolves.",
+        );
+      }
+
+      const dashboardUrl = businessSiteUrl
+        ? `${businessSiteUrl}/owner/dashboard`
+        : null;
+      // Skip rather than send a broken link: the approval itself already
+      // succeeded, and a dead CTA is worse than no email.
+      if (dashboardUrl) {
+        const { data: emailData, error: emailError } = await resend.emails.send({
+          from: MAIL_FROM,
+          to: [ownerProfile.email],
+          subject: `Your claim for ${cafeData.name} has been approved!`,
+          react: (
+            <CafeClaimApprovedEmail
+              ownerName={ownerProfile.full_name ?? "there"}
+              cafeName={cafeData.name}
+              dashboardUrl={dashboardUrl}
+              email={ownerProfile.email}
+            />
+          ),
         });
-      } else {
-        console.log("[EMAIL] Approval email sent:", emailData?.id);
+
+        if (emailError) {
+          console.error("[EMAIL] Failed to send approval email:", {
+            name: emailError.name,
+            message: emailError.message,
+          });
+        } else {
+          console.log("[EMAIL] Approval email sent:", emailData?.id);
+        }
       }
     }
 
@@ -282,7 +307,7 @@ export async function rejectClaimAction(
       if (ownerProfile?.email && cafeData?.name) {
         const { data: emailData, error: emailError } = await resend.emails.send(
           {
-            from: "Nook <noreply@surgestudio.tech>",
+            from: MAIL_FROM,
             to: [ownerProfile.email],
             subject: `Your claim for ${cafeData.name} could not be approved`,
             react: (
