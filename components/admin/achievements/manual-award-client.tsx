@@ -42,6 +42,7 @@ import {
   checkDuplicateAwardAction,
   awardAchievementAction,
 } from "@/lib/actions/achievements"
+import { PageTitle } from "@/components/admin/page-header"
 
 function nowLocalISO() {
   const now = new Date()
@@ -220,13 +221,19 @@ export function ManualAwardClient({
           <ArrowLeft />
           Back
         </Button>
-        <h1 className="text-xl font-semibold">Award Achievement</h1>
-        <p className="text-muted-foreground text-sm">
-          Manually grant an achievement to a user with{" "}
-          <span className="font-mono text-xs bg-muted px-1 py-0.5 rounded">
-            source_type = &quot;manual&quot;
-          </span>
-        </p>
+        <PageTitle
+          size="sm"
+          eyebrow="Achievements"
+          title="Award Achievement"
+          lead={
+            <>
+              Manually grant an achievement to a user with{" "}
+              <span className="font-mono text-xs bg-muted px-1 py-0.5 rounded">
+                source_type = &quot;manual&quot;
+              </span>
+            </>
+          }
+        />
       </div>
 
       <Card>

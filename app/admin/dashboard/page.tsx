@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { PageHeader } from "@/components/admin/page-header"
 import { QuickActions } from "@/components/admin/quick-actions"
 
 export const metadata: Metadata = { title: "Dashboard" }
@@ -13,7 +14,12 @@ export default async function DashboardPage() {
     getReportsMetrics(),
   ])
   return (
-    <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 px-4 py-6 lg:px-6">
+    <div className="w-full max-w-6xl mx-auto flex flex-col gap-8 px-4 py-6 lg:px-6">
+      <PageHeader
+        eyebrow="Overview"
+        title="Dashboard"
+        lead="What needs attention first, then how the platform is growing."
+      />
       <SectionCards
         stats={{ ...stats, pendingReports: reportsMetrics.pendingCount }}
       />

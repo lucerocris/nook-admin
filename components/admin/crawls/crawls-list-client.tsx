@@ -52,6 +52,7 @@ import {
 import { CrawlStatusBadge } from "@/components/admin/crawls/crawl-status-badge"
 import type { Crawl, CrawlStatus } from "@/lib/types/crawls"
 import { toggleFeaturedAction, updateCrawlStatusAction } from "@/app/admin/crawls/actions"
+import { PageTitle } from "@/components/admin/page-header"
 
 function formatDateRange(startsAt: string, endsAt: string) {
   const start = new Date(startsAt)
@@ -215,13 +216,12 @@ export function CrawlsListClient({ crawls: initialCrawls }: { crawls: Crawl[] })
 
   return (
     <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 px-4 py-6 lg:px-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Crawls</h1>
-          <p className="text-muted-foreground text-sm">
-            Create and manage time-limited cafe crawl events
-          </p>
-        </div>
+      <div className="flex items-end justify-between gap-4">
+        <PageTitle
+          eyebrow="Engagement"
+          title="Crawls"
+          lead="Create and manage time-limited cafe crawl events"
+        />
         <Button asChild>
           <Link href="/admin/crawls/new">
             <Plus />

@@ -38,6 +38,7 @@ import type {
   StopOption,
 } from "@/lib/types/crawls"
 import { updateCrawlStatusAction, toggleFeaturedAction } from "@/app/admin/crawls/actions"
+import { PageTitle } from "@/components/admin/page-header"
 
 export function CrawlDetailClient({
   crawl: initialCrawl,
@@ -117,14 +118,16 @@ export function CrawlDetailClient({
               <ArrowLeft />
             </Link>
           </Button>
-          <div className="flex flex-col gap-0.5">
-            <div className="flex items-center gap-3">
-              <h1 className="text-xl font-semibold">
+          <PageTitle
+            size="sm"
+            eyebrow="Crawl"
+            title={
+              <span className="flex flex-wrap items-center gap-3">
                 {currentCrawl.title}
-              </h1>
-              <CrawlStatusBadge status={currentCrawl.status} />
-            </div>
-          </div>
+                <CrawlStatusBadge status={currentCrawl.status} />
+              </span>
+            }
+          />
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">

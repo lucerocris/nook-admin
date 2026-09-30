@@ -56,6 +56,7 @@ import {
 } from "@/app/admin/tags/actions"
 import { cn } from "@/lib/utils"
 import type { Tag } from "@/lib/queries/tags"
+import { PageTitle } from "@/components/admin/page-header"
 
 const categoryOrder = ["best_for", "amenities", "payment", "vibe"]
 const categoryLabels: Record<string, string> = {
@@ -209,13 +210,12 @@ export function TagsClient({ tags }: { tags: Tag[] }) {
 
   return (
     <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 px-4 py-6 lg:px-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Tags</h1>
-          <p className="text-muted-foreground text-sm">
-            Master tag list — all tags used across the app
-          </p>
-        </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <PageTitle
+          eyebrow="Catalog"
+          title="Tags"
+          lead="Master tag list — all tags used across the app"
+        />
         <div className="w-full sm:w-auto">
           <Dialog open={addTagOpen} onOpenChange={setAddTagOpen}>
             <DialogTrigger asChild>

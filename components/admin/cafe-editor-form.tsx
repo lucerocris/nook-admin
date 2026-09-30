@@ -94,6 +94,7 @@ import {
   deleteMenuItemImageAction,
 } from "@/app/actions/upload"
 import imageCompression from "browser-image-compression"
+import { PageTitle } from "@/components/admin/page-header"
 
 async function compressImage(file: File): Promise<File> {
   return imageCompression(file, {
@@ -2026,16 +2027,16 @@ export function CafeEditorForm({
                 <ArrowLeft />
               </Link>
             </Button>
-            <div className="flex flex-col">
-              <h1 className="text-xl font-semibold">
-                {mode === "create" ? "Add Cafe" : "Edit Cafe"}
-              </h1>
-              <p className="text-muted-foreground text-sm">
-                {mode === "create"
+            <PageTitle
+              size="sm"
+              eyebrow="Listings"
+              title={mode === "create" ? "Add Cafe" : "Edit Cafe"}
+              lead={
+                mode === "create"
                   ? "Fill in the details below"
-                  : "Update the cafe details"}
-              </p>
-            </div>
+                  : "Update the cafe details"
+              }
+            />
           </div>
         )}
 
