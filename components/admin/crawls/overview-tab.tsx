@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { MetricGrid } from "@/components/admin/metric-grid"
 import type { Crawl, CrawlTier, CrawlStats } from "@/lib/types/crawls"
 import { updateCrawlAction, checkSlugUniquenessAction } from "@/app/admin/crawls/actions"
 
@@ -134,187 +135,205 @@ export function OverviewTab({
     })
   }
 
+  const registrants = stats.totalRegistrants
+  // tierBreakdown counts each registrant once, at their highest tier, so the
+  // sum is everyone who reached at least one tier.
+  const reachedTier = stats.tierBreakdown.reduce(
+    (sum, tier) => sum + tier.completions,
+    0
+  )
+  const shareOf = (count: number) =>
+    registrants > 0 ? `${Math.round((count / registrants) * 100)}%` : "–"
+
   return (
-    <div className="grid grid-cols-[1fr_320px] gap-8">
-      <div className="flex flex-col gap-5">
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium">Title</label>
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium">Description</label>
-          <Textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={4}
-          />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium">Slug</label>
-          <Input
-            value={slug}
-            onChange={(e) => {
-              setSlug(e.target.value)
-              setSlugError("")
-            }}
-            onBlur={handleSlugBlur}
-          />
-          {slugError ? (
-            <p className="text-xs text-destructive">{slugError}</p>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              Affects deep links to the crawl
-            </p>
-          )}
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium">City</label>
-          <Input
-            value={city}
-            onChange={(e) => setCity(e.target.value)}
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
+    <div className="flex flex-col gap-8">
+      <MetricGrid
+        className="sm:grid-cols-3"
+        metrics={[
+          {
+            label: "Registrants",
+            value: registrants,
+            note: "Signed up for this crawl",
+          },
+          {
+            label: "Stamps claimed",
+            value: stats.totalStamps,
+            note:
+              registrants > 0
+                ? `${(stats.totalStamps / registrants).toFixed(1)} per registrant`
+                : "No registrants yet",
+          },
+          {
+            label: "Reached a tier",
+            value: reachedTier,
+            note:
+              registrants > 0
+                ? `${shareOf(reachedTier)} of registrants`
+                : "No registrants yet",
+          },
+        ]}
+      />
+      <div className="grid grid-cols-[1fr_320px] gap-8">
+        <div className="flex flex-col gap-5">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium">Start Date</label>
+            <label className="text-xs font-medium">Title</label>
             <Input
-              type="datetime-local"
-              value={startsAt}
-              onChange={(e) => {
-                setStartsAt(e.target.value)
-                setDateError("")
-              }}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
             />
           </div>
+
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium">End Date</label>
+            <label className="text-xs font-medium">Description</label>
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={4}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium">Slug</label>
             <Input
-              type="datetime-local"
-              value={endsAt}
+              value={slug}
               onChange={(e) => {
-                setEndsAt(e.target.value)
-                setDateError("")
+                setSlug(e.target.value)
+                setSlugError("")
               }}
+              onBlur={handleSlugBlur}
             />
-          </div>
-        </div>
-        {dateError && (
-          <p className="text-xs text-destructive">{dateError}</p>
-        )}
-
-        {!startsAt || !endsAt || new Date(endsAt) <= new Date(startsAt) ? (
-          <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm dark:border-amber-800 dark:bg-amber-950">
-            <WarningCircle className="size-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
-            <div>
-              <p className="text-amber-800 dark:text-amber-200">
-                End date must be after start date
-              </p>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium">Cover Image URL</label>
-          <Input
-            placeholder="https://example.com/image.jpg"
-            value={coverImageUrl}
-            onChange={(e) => setCoverImageUrl(e.target.value)}
-          />
-          {coverImageUrl && (
-            <div
-              className="mt-2 size-32 rounded-md bg-muted bg-cover bg-center border"
-              style={{ backgroundImage: `url(${coverImageUrl})` }}
-              aria-hidden="true"
-            />
-          )}
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium">Stamp Template</label>
-          <Input
-            placeholder="https://example.com/stamp-template.png"
-            value={stampTemplateUrl}
-            onChange={(e) => setStampTemplateUrl(e.target.value)}
-          />
-          {stampTemplateUrl ? (
-            <div
-              className="mt-2 size-[120px] rounded-full bg-muted bg-cover bg-center border"
-              style={{ backgroundImage: `url(${stampTemplateUrl})` }}
-              aria-hidden="true"
-            />
-          ) : (
-            <div className="mt-2 size-[120px] rounded-full border-2 border-dashed border-muted-foreground/30 flex flex-col items-center justify-center gap-1 text-muted-foreground">
-              <SealCheck className="size-6" />
-              <span className="text-xs">No template yet</span>
-            </div>
-          )}
-          <p className="text-xs text-muted-foreground">
-            This template wraps each cafe's logo when a user claims a stop.
-          </p>
-        </div>
-
-        <div className="pt-2">
-          <Button disabled={!isDirty || !!slugError || !!dateError || isPending} onClick={handleSave}>
-            Save Changes
-          </Button>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Summary Stats</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <div>
-              <p className="text-xs text-muted-foreground">Total Registrants</p>
-              <p className="text-2xl font-semibold">
-                {stats.totalRegistrants.toLocaleString()}
-              </p>
-            </div>
-            <div>
+            {slugError ? (
+              <p className="text-xs text-destructive">{slugError}</p>
+            ) : (
               <p className="text-xs text-muted-foreground">
-                Total Stamps Claimed
+                Affects deep links to the crawl
               </p>
-              <p className="text-2xl font-semibold">
-                {stats.totalStamps.toLocaleString()}
-              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium">City</label>
+            <Input
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium">Start Date</label>
+              <Input
+                type="datetime-local"
+                value={startsAt}
+                onChange={(e) => {
+                  setStartsAt(e.target.value)
+                  setDateError("")
+                }}
+              />
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-2">
-                Tier Breakdown
-              </p>
-              <div className="flex flex-col gap-2">
-                {stats.tierBreakdown.length > 0 ? (
-                  stats.tierBreakdown.map((tier) => (
-                    <div
-                      key={tier.name}
-                      className="flex items-center justify-between"
-                    >
-                      <Badge variant="secondary" className="text-xs">
-                        {tier.name}
-                      </Badge>
-                      <span className="text-sm font-medium">
-                        {tier.completions.toLocaleString()}
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    No tiers defined
-                  </p>
-                )}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium">End Date</label>
+              <Input
+                type="datetime-local"
+                value={endsAt}
+                onChange={(e) => {
+                  setEndsAt(e.target.value)
+                  setDateError("")
+                }}
+              />
+            </div>
+          </div>
+          {dateError && (
+            <p className="text-xs text-destructive">{dateError}</p>
+          )}
+
+          {!startsAt || !endsAt || new Date(endsAt) <= new Date(startsAt) ? (
+            <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm dark:border-amber-800 dark:bg-amber-950">
+              <WarningCircle className="size-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-amber-800 dark:text-amber-200">
+                  End date must be after start date
+                </p>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          ) : null}
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium">Cover Image URL</label>
+            <Input
+              placeholder="https://example.com/image.jpg"
+              value={coverImageUrl}
+              onChange={(e) => setCoverImageUrl(e.target.value)}
+            />
+            {coverImageUrl && (
+              <div
+                className="mt-2 size-32 rounded-md bg-muted bg-cover bg-center border"
+                style={{ backgroundImage: `url(${coverImageUrl})` }}
+                aria-hidden="true"
+              />
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium">Stamp Template</label>
+            <Input
+              placeholder="https://example.com/stamp-template.png"
+              value={stampTemplateUrl}
+              onChange={(e) => setStampTemplateUrl(e.target.value)}
+            />
+            {stampTemplateUrl ? (
+              <div
+                className="mt-2 size-[120px] rounded-full bg-muted bg-cover bg-center border"
+                style={{ backgroundImage: `url(${stampTemplateUrl})` }}
+                aria-hidden="true"
+              />
+            ) : (
+              <div className="mt-2 size-[120px] rounded-full border-2 border-dashed border-muted-foreground/30 flex flex-col items-center justify-center gap-1 text-muted-foreground">
+                <SealCheck className="size-6" />
+                <span className="text-xs">No template yet</span>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              This template wraps each cafe's logo when a user claims a stop.
+            </p>
+          </div>
+
+          <div className="pt-2">
+            <Button disabled={!isDirty || !!slugError || !!dateError || isPending} onClick={handleSave}>
+              Save Changes
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Highest tier reached</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2">
+              {stats.tierBreakdown.length > 0 ? (
+                stats.tierBreakdown.map((tier) => (
+                  <div
+                    key={tier.name}
+                    className="flex items-center justify-between"
+                  >
+                    <Badge variant="secondary" className="text-xs">
+                      {tier.name}
+                    </Badge>
+                    <span className="text-sm font-medium tabular-nums">
+                      {tier.completions.toLocaleString()}
+                      <span className="ml-2 text-muted-foreground">
+                        {shareOf(tier.completions)}
+                      </span>
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-muted-foreground">No tiers defined</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   )
