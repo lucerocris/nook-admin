@@ -1,22 +1,24 @@
 import { MetricGrid, type Metric } from "@/components/admin/metric-grid"
+import type { DashboardStats } from "@/lib/queries/cafes"
 
-type Stats = {
-  totalCafes: number
-  totalUsers: number
-  reviewsThisWeek: number
-  activeOwners: number
-  unclaimedCafes: number
-  pendingReports: number
-}
+type Stats = DashboardStats & { pendingReports: number }
 
 export function SectionCards({ stats }: { stats: Stats }) {
-  const metrics: Metric[] = [
+  const attention: Metric[] = [
     {
       label: "Pending reports",
       value: stats.pendingReports,
       note: "Reports awaiting moderator action",
       href: "/admin/reviews?status=pending&sort=oldest",
       linkLabel: "Open the queue",
+      attention: true,
+    },
+    {
+      label: "Open claims",
+      value: stats.openClaims,
+      note: "Ownership claims pending or under review",
+      href: "/admin/claims",
+      linkLabel: "Review claims",
       attention: true,
     },
     {
@@ -27,12 +29,15 @@ export function SectionCards({ stats }: { stats: Stats }) {
       linkLabel: "View listings",
       attention: true,
     },
+  ]
+
+  const growth: Metric[] = [
     {
-      label: "Total cafes",
+      label: "Active cafes",
       value: stats.totalCafes,
-      note: "Published and draft listings",
-      href: "/admin/cafes",
-      linkLabel: "All cafes",
+      note: "Listings with Active status, visible in the app",
+      href: "/admin/cafes?status=active",
+      linkLabel: "Active listings",
     },
     {
       label: "Active owners",
@@ -55,5 +60,20 @@ export function SectionCards({ stats }: { stats: Stats }) {
     },
   ]
 
-  return <MetricGrid metrics={metrics} />
+  return (
+    <div className="flex flex-col gap-8">
+      <section className="flex flex-col gap-3">
+        <h2 className="eyebrow">Needs attention</h2>
+        <MetricGrid metrics={attention} className="sm:grid-cols-3" />
+      </section>
+      <section className="flex flex-col gap-3">
+        <h2 className="eyebrow">Growth</h2>
+        <MetricGrid
+          metrics={growth}
+          compact
+          className="sm:grid-cols-2 xl:grid-cols-4"
+        />
+      </section>
+    </div>
+  )
 }

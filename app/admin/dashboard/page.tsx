@@ -1,12 +1,13 @@
 import type { Metadata } from "next"
+import { DataFreshness } from "@/components/admin/data-freshness"
 import { PageHeader } from "@/components/admin/page-header"
 import { QuickActions } from "@/components/admin/quick-actions"
-
-export const metadata: Metadata = { title: "Dashboard" }
 import { RecentActivity } from "@/components/admin/recent-activity"
 import { SectionCards } from "@/components/admin/section-cards"
 import { getDashboardStats } from "@/lib/queries/cafes"
 import { getReportsMetrics } from "@/lib/queries/reports"
+
+export const metadata: Metadata = { title: "Dashboard" }
 
 export default async function DashboardPage() {
   const [stats, reportsMetrics] = await Promise.all([
@@ -27,6 +28,7 @@ export default async function DashboardPage() {
         <RecentActivity />
         <QuickActions />
       </div>
+      <DataFreshness generatedAt={stats.generatedAt} />
     </div>
   )
 }
