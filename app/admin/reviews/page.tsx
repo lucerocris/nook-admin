@@ -8,6 +8,7 @@ import { ReportsMetricsCards } from "@/components/admin/reports-metrics-cards"
 import { PendingReportsCallout } from "@/components/admin/pending-reports-callout"
 import { ReportsQuickActions } from "@/components/admin/reports-quick-actions"
 import { getReports, getReportsMetrics } from "@/lib/queries/reports"
+import { PageTitle } from "@/components/admin/page-header"
 
 export const metadata: Metadata = { title: "Reviews" }
 
@@ -38,13 +39,12 @@ export default async function ReviewsPage({
 
   return (
     <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 px-4 py-6 lg:px-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Reviews</h1>
-          <p className="text-muted-foreground text-sm">
-            Review and action reports submitted by cafe owners
-          </p>
-        </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <PageTitle
+          eyebrow="Moderation"
+          title="Reviews"
+          lead="Review and action reports submitted by cafe owners"
+        />
       </div>
 
       <ReportsMetricsCards metrics={metrics} />

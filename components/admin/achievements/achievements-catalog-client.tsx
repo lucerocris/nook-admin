@@ -45,6 +45,7 @@ import {
   createAchievementAction,
   updateAchievementAction,
 } from "@/lib/actions/achievements"
+import { PageTitle } from "@/components/admin/page-header"
 
 function formatDate(isoString: string) {
   return new Date(isoString).toLocaleDateString("en-US", {
@@ -166,13 +167,12 @@ export function AchievementsCatalogClient({
 
   return (
     <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 px-4 py-6 lg:px-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Achievements</h1>
-          <p className="text-muted-foreground text-sm">
-            Global achievement catalog — create and manage achievement definitions
-          </p>
-        </div>
+      <div className="flex items-end justify-between gap-4">
+        <PageTitle
+          eyebrow="Engagement"
+          title="Achievements"
+          lead="Global achievement catalog — create and manage achievement definitions"
+        />
         <Button onClick={openCreate}>
           <Plus />
           New Achievement

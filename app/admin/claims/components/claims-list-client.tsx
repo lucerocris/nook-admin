@@ -56,6 +56,7 @@ import {
   markUnderReviewAction,
   rejectClaimAction,
 } from "@/app/admin/claims/actions";
+import { PageTitle } from "@/components/admin/page-header";
 
 export type ClaimStatus =
   | "pending"
@@ -375,13 +376,12 @@ export function ClaimsListClient({
   return (
     <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 px-4 py-6 lg:px-6">
       {/* Section 1 — Page header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Claims</h1>
-          <p className="text-muted-foreground text-sm">
-            Review and action cafe ownership claims
-          </p>
-        </div>
+      <div className="flex items-end justify-between">
+        <PageTitle
+          eyebrow="Listings"
+          title="Claims"
+          lead="Review and action cafe ownership claims"
+        />
       </div>
 
       {/* Section 2 — Filters and search */}

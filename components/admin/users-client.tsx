@@ -52,6 +52,7 @@ import {
   deleteUserAction,
 } from "@/app/admin/users/actions"
 import type { AppUser, UserSort, UserStatusFilter } from "@/lib/queries/users"
+import { PageTitle } from "@/components/admin/page-header"
 
 type UserStatus = "Active" | "Suspended"
 
@@ -354,13 +355,12 @@ export function UsersClient({
   return (
     <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 px-4 py-6 lg:px-6">
       {/* Section 1 — Page header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Users</h1>
-          <p className="text-muted-foreground text-sm">
-            All registered app users
-          </p>
-        </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <PageTitle
+          eyebrow="Community"
+          title="Users"
+          lead="All registered app users"
+        />
       </div>
 
       {/* Section 2 — Search bar */}

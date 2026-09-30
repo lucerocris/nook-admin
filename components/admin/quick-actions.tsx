@@ -19,7 +19,9 @@ export function QuickActions() {
   return (
     <Card>
       <CardHeader className="border-b">
-        <CardTitle>Quick Actions</CardTitle>
+        <CardTitle>
+          <span className="eyebrow">Quick actions</span>
+        </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-2 p-4">
         <Button variant="outline" className="w-full justify-start" asChild>
@@ -35,7 +37,7 @@ export function QuickActions() {
           </Link>
         </Button>
         <Button variant="outline" className="w-full justify-start" asChild>
-          <Link href="/admin/cafes?filter=unclaimed">
+          <Link href="/admin/cafes?owner=unclaimed">
             <WarningCircle className="mr-1 size-4" />
             View Unclaimed Listings
           </Link>

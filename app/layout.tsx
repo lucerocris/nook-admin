@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Inter, Inter_Tight, JetBrains_Mono } from "next/font/google";
 import "./globals.css"
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -8,6 +8,12 @@ import { Toaster } from "sonner";
 const inter = Inter({
   variable: "--font-sans",
   subsets: ["latin"],
+});
+
+const interTight = Inter_Tight({
+  variable: "--font-display",
+  subsets: ["latin"],
+  weight: ["600"],
 });
 
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
@@ -31,7 +37,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={cn("font-sans", inter.variable, jetbrainsMono.variable)}>
+    <html lang="en" className={cn("font-sans", inter.variable, interTight.variable, jetbrainsMono.variable)}>
       <body className="antialiased">
         <TooltipProvider>
           {children}

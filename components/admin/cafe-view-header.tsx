@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { ArrowLeft, Eye, PencilSimple, Info } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { PageTitle } from "@/components/admin/page-header"
 
 interface CafeViewHeaderProps {
   cafeId: string
@@ -19,10 +20,7 @@ export function CafeViewHeader({ cafeId, cafeName }: CafeViewHeaderProps) {
               <ArrowLeft />
             </Link>
           </Button>
-          <div className="flex flex-col gap-0.5">
-            <h1 className="text-2xl font-semibold">{cafeName}</h1>
-            <p className="text-sm text-muted-foreground">Viewing cafe listing</p>
-          </div>
+          <PageTitle size="sm" eyebrow="Cafe listing" title={cafeName} />
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" asChild>

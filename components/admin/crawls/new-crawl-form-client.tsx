@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { createCrawlAction, checkSlugUniquenessAction } from "@/app/admin/crawls/actions"
+import { PageTitle } from "@/components/admin/page-header"
 
 function fromDatetimeLocalValue(value: string): string {
   const d = new Date(value)
@@ -146,12 +147,12 @@ export function NewCrawlFormClient() {
             <ArrowLeft />
           </Link>
         </Button>
-        <div>
-          <h1 className="text-xl font-semibold">New Crawl</h1>
-          <p className="text-sm text-muted-foreground">
-            Create a new time-limited crawl event
-          </p>
-        </div>
+        <PageTitle
+          size="sm"
+          eyebrow="Crawls"
+          title="New Crawl"
+          lead="Create a new time-limited crawl event"
+        />
       </div>
 
       <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm dark:border-amber-800 dark:bg-amber-950">

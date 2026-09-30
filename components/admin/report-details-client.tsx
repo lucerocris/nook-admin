@@ -29,6 +29,7 @@ import { ReportStatusCallout } from "@/components/admin/report-status-callout"
 import { ReviewStatusBadge } from "@/components/admin/review-status-badge"
 import { getReasonLabel } from "@/lib/queries/reports"
 import type { ReportRow } from "@/lib/types/reports"
+import { PageTitle } from "@/components/admin/page-header"
 
 function StarRow({ rating }: { rating: number }) {
   return (
@@ -119,18 +120,20 @@ export function ReportDetailsClient({ report }: { report: ReportRow }) {
               <ArrowLeftIcon />
             </Link>
           </Button>
-          <div className="flex flex-col gap-0.5">
-            <h1 className="text-xl font-semibold">
-              Report {report.short_id}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Submitted {formatRelative(report.created_at)} by{" "}
-              {report.reporter.username
-                ? `@${report.reporter.username}`
-                : reporterName}{" "}
-              · Reason: {getReasonLabel(report.reason)}
-            </p>
-          </div>
+          <PageTitle
+            size="sm"
+            eyebrow="Moderation"
+            title={`Report ${report.short_id}`}
+            lead={
+              <>
+                Submitted {formatRelative(report.created_at)} by{" "}
+                {report.reporter.username
+                  ? `@${report.reporter.username}`
+                  : reporterName}{" "}
+                · Reason: {getReasonLabel(report.reason)}
+              </>
+            }
+          />
         </div>
       </div>
 
