@@ -52,7 +52,13 @@ export function RecentActivity() {
   return (
     <Card className="lg:col-span-2">
       <CardHeader className="border-b">
-        <CardTitle>Recent Activity</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <span className="eyebrow">Recent activity</span>
+          {/* The feed below is hardcoded until an activity source exists. */}
+          <span className="bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+            Sample data
+          </span>
+        </CardTitle>
       </CardHeader>
       <CardContent className="p-0">
         {activityFeed.map((item, index) => {
@@ -62,8 +68,8 @@ export function RecentActivity() {
               key={index}
               className="flex items-center gap-3 border-b px-4 py-3 last:border-0"
             >
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">
-                <Icon className="size-4 text-muted-foreground" />
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-tint">
+                <Icon className="size-4 text-primary" />
               </div>
               <p className="flex-1 text-sm">{item.description}</p>
               <span className="shrink-0 text-xs text-muted-foreground">
