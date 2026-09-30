@@ -35,7 +35,7 @@ export function QuickActions() {
           </Link>
         </Button>
         <Button variant="outline" className="w-full justify-start" asChild>
-          <Link href="/admin/cafes?filter=unclaimed">
+          <Link href="/admin/cafes?owner=unclaimed">
             <WarningCircle className="mr-1 size-4" />
             View Unclaimed Listings
           </Link>
