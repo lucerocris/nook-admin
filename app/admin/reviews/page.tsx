@@ -5,9 +5,11 @@ import {
   ReportsQueueClient,
 } from "@/components/admin/reports-queue-client"
 import { ReportsMetricsCards } from "@/components/admin/reports-metrics-cards"
-import { PendingReportsCallout } from "@/components/admin/pending-reports-callout"
-import { ReportsQuickActions } from "@/components/admin/reports-quick-actions"
-import { getReports, getReportsMetrics } from "@/lib/queries/reports"
+import {
+  getOldestPendingReportAt,
+  getReports,
+  getReportsMetrics,
+} from "@/lib/queries/reports"
 import { PageTitle } from "@/components/admin/page-header"
 
 export const metadata: Metadata = { title: "Reviews" }
@@ -24,18 +26,15 @@ export default async function ReviewsPage({
 }) {
   const { search, status, sort, page } = await searchParams
 
-  const [{ reports, total, totalPages, page: safePage }, metrics] =
+  const [{ reports, total, totalPages, page: safePage }, metrics, oldestPendingAt] =
     await Promise.all([
       getReports({ search, status, sort, page }),
       getReportsMetrics(),
+      getOldestPendingReportAt(),
     ])
 
   const activeStatus = status ?? "active"
   const showEmpty = activeStatus === "active" && reports.length === 0
-  const showCallout =
-    activeStatus === "active" || activeStatus === "all" || !activeStatus
-  const oldestPending =
-    reports.find((r) => r.status === "pending")?.created_at ?? null
 
   return (
     <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 px-4 py-6 lg:px-6">
@@ -47,37 +46,24 @@ export default async function ReviewsPage({
         />
       </div>
 
-      <ReportsMetricsCards metrics={metrics} />
+      <ReportsMetricsCards metrics={metrics} oldestPendingAt={oldestPendingAt} />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_280px]">
-        <div className="flex flex-col gap-6 min-w-0">
-          {showCallout && (
-            <PendingReportsCallout
-              pendingCount={metrics.pendingCount}
-              oldestSubmittedAt={oldestPending}
-            />
-          )}
+      <ReportsFilterBar />
 
-          <ReportsFilterBar />
-
-          {showEmpty ? (
-            <div className="rounded-lg border border-dashed p-12 text-center">
-              <p className="text-sm text-muted-foreground">
-                The active queue is empty. Nothing needs your attention right now.
-              </p>
-            </div>
-          ) : (
-            <ReportsQueueClient
-              reports={reports}
-              page={safePage}
-              total={total}
-              totalPages={totalPages}
-            />
-          )}
+      {showEmpty ? (
+        <div className="rounded-lg border border-dashed p-12 text-center">
+          <p className="text-sm text-muted-foreground">
+            The active queue is empty. Nothing needs your attention right now.
+          </p>
         </div>
-
-        <ReportsQuickActions />
-      </div>
+      ) : (
+        <ReportsQueueClient
+          reports={reports}
+          page={safePage}
+          total={total}
+          totalPages={totalPages}
+        />
+      )}
     </div>
   )
 }

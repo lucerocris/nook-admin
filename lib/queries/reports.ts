@@ -409,3 +409,19 @@ export async function getReportsMetrics(): Promise<ReportsMetrics> {
     resolvedThisWeekCount: summary.reports.resolved_last_7d,
   }
 }
+
+// The queue page used to take this from whichever reports were on the current
+// page, which gave the wrong answer under any sort other than "oldest".
+export async function getOldestPendingReportAt(): Promise<string | null> {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from("review_reports")
+    .select("created_at")
+    .eq("status", "pending")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw error
+  return data?.created_at ?? null
+}
