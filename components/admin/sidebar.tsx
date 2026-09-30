@@ -107,7 +107,12 @@ export function AdminSidebar({
                 item.title === "Reviews" && pendingReportsCount > 0
               return (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild isActive={isActive} tooltip={item.title}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isActive}
+                    tooltip={item.title}
+                    className="data-active:bg-brand-tint data-active:text-primary data-active:shadow-[inset_2px_0_0_var(--primary)]"
+                  >
                     <Link href={item.url}>
                       <item.icon />
                       <span>{item.title}</span>
