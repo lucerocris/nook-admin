@@ -36,6 +36,10 @@ type NavItem = {
   icon: React.ElementType
 }
 
+// The stock badge sits 6px from the top of a 36px row, 2px above center.
+const badgeCentered =
+  "peer-data-[size=default]/menu-button:top-1/2 -translate-y-1/2"
+
 const navItems: NavItem[] = [
   { title: "Dashboard", url: "/admin/dashboard", icon: SquaresFourIcon },
   { title: "Cafes", url: "/admin/cafes", icon: StorefrontIcon },
@@ -119,10 +123,14 @@ export function AdminSidebar({
                     </Link>
                   </SidebarMenuButton>
                   {showClaimsBadge && (
-                    <SidebarMenuBadge>{pendingClaimsCount}</SidebarMenuBadge>
+                    <SidebarMenuBadge className={badgeCentered}>
+                      {pendingClaimsCount}
+                    </SidebarMenuBadge>
                   )}
                   {showReportsBadge && (
-                    <SidebarMenuBadge>{pendingReportsCount}</SidebarMenuBadge>
+                    <SidebarMenuBadge className={badgeCentered}>
+                      {pendingReportsCount}
+                    </SidebarMenuBadge>
                   )}
                 </SidebarMenuItem>
               )
