@@ -2,9 +2,13 @@
 
 import * as React from "react"
 import mapboxgl from "mapbox-gl"
+import { useTheme } from "next-themes"
 import "mapbox-gl/dist/mapbox-gl.css"
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ""
+
+const MAP_STYLE_LIGHT = "mapbox://styles/mapbox/streets-v12"
+const MAP_STYLE_DARK = "mapbox://styles/mapbox/dark-v11"
 
 type Props = {
   lat: number
@@ -18,6 +22,18 @@ export function MapPicker({ lat, lng, onChange, disabled }: Props) {
   const map = React.useRef<mapboxgl.Map | null>(null)
   const marker = React.useRef<mapboxgl.Marker | null>(null)
 
+  const { resolvedTheme } = useTheme()
+  const mapStyle = resolvedTheme === "dark" ? MAP_STYLE_DARK : MAP_STYLE_LIGHT
+  const mapStyleRef = React.useRef(mapStyle)
+
+  // Restyle the live map on a theme change instead of rebuilding it, so the
+  // zoom and marker position survive the toggle.
+  React.useEffect(() => {
+    if (mapStyleRef.current === mapStyle) return
+    mapStyleRef.current = mapStyle
+    map.current?.setStyle(mapStyle)
+  }, [mapStyle])
+
   // Default center — Cebu City
   const defaultLat = lat || 10.3157
   const defaultLng = lng || 123.8854
@@ -30,7 +46,7 @@ export function MapPicker({ lat, lng, onChange, disabled }: Props) {
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: "mapbox://styles/mapbox/streets-v12",
+      style: mapStyleRef.current,
       center: [defaultLng, defaultLat],
       zoom: 15,
     })

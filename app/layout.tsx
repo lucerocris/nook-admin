@@ -3,7 +3,8 @@ import { Inter, Inter_Tight, JetBrains_Mono } from "next/font/google";
 import "./globals.css"
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Toaster } from "sonner";
+import { Toaster } from "@/components/ui/sonner";
+import { ThemeProvider } from "@/components/theme-provider";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -37,12 +38,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={cn("font-sans", inter.variable, interTight.variable, jetbrainsMono.variable)}>
+    <html lang="en" suppressHydrationWarning className={cn("font-sans", inter.variable, interTight.variable, jetbrainsMono.variable)}>
       <body className="antialiased">
-        <TooltipProvider>
-          {children}
-          <Toaster richColors />
-        </TooltipProvider>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <TooltipProvider>
+            {children}
+            <Toaster richColors />
+          </TooltipProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

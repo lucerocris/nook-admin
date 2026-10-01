@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { AdminSidebar } from "@/components/admin/sidebar"
 import { getAdminDashboardSummary } from "@/lib/queries/dashboard"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { Separator } from "@/components/ui/separator"
 import {
   SidebarInset,
@@ -41,6 +42,7 @@ export default async function AdminLayout({
             orientation="vertical"
             className="mr-2 data-vertical:h-4 data-vertical:self-auto"
           />
+          <ThemeToggle className="ml-auto" />
         </header>
         <main className="flex flex-1 flex-col gap-4 p-4">
           {children}
