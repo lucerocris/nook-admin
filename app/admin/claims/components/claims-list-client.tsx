@@ -57,6 +57,7 @@ import {
   rejectClaimAction,
 } from "@/app/admin/claims/actions";
 import { PageTitle } from "@/components/admin/page-header";
+import { MetricGrid, type Metric } from "@/components/admin/metric-grid";
 
 export type ClaimStatus =
   | "pending"
@@ -322,11 +323,13 @@ function ClaimActions({ claim }: { claim: ClaimRow }) {
 
 export function ClaimsListClient({
   claims,
+  metrics,
   page,
   total,
   totalPages,
 }: {
   claims: ClaimRow[];
+  metrics: Metric[];
   page: number;
   total: number;
   totalPages: number;
@@ -383,6 +386,8 @@ export function ClaimsListClient({
           lead="Review and action cafe ownership claims"
         />
       </div>
+
+      <MetricGrid className="sm:grid-cols-3" metrics={metrics} />
 
       {/* Section 2 — Filters and search */}
       <div className="flex flex-wrap gap-3">

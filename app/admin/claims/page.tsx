@@ -1,5 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
+import type { Metric } from "@/components/admin/metric-grid";
+import { getAdminDashboardSummary } from "@/lib/queries/dashboard";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   ClaimsListClient,
@@ -20,6 +22,47 @@ const ALLOWED_STATUSES = new Set<ClaimStatus>([
 
 function toPostgrestList(values: string[]) {
   return values.map((value) => `"${value}"`).join(",");
+}
+
+// Pending and under-review counts come from the cached dashboard summary. The
+// summary has no resolved-this-week figure for claims, so that one is counted
+// here from reviewed_at.
+async function getClaimsMetrics(
+  supabase: ReturnType<typeof createAdminClient>,
+): Promise<Metric[]> {
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const [summary, resolvedResult] = await Promise.all([
+    getAdminDashboardSummary(),
+    supabase
+      .from("cafe_claims")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["approved", "rejected"])
+      .gte("reviewed_at", weekAgo),
+  ]);
+  if (resolvedResult.error) throw resolvedResult.error;
+
+  return [
+    {
+      label: "Pending claims",
+      value: summary.claims.by_status.pending ?? 0,
+      note: "Submitted, not yet picked up by an admin",
+      href: "/admin/claims?status=pending",
+      linkLabel: "Pending only",
+      attention: true,
+    },
+    {
+      label: "Under review",
+      value: summary.claims.by_status.under_review ?? 0,
+      note: "Claims an admin is verifying",
+      href: "/admin/claims?status=under_review",
+      linkLabel: "Under review only",
+    },
+    {
+      label: "Resolved this week",
+      value: resolvedResult.count ?? 0,
+      note: "Approved and rejected in the last 7 days",
+    },
+  ];
 }
 
 export default async function ClaimsPage({
@@ -48,6 +91,7 @@ export default async function ClaimsPage({
 
   const search = rawSearch?.trim() ?? "";
   const supabase = createAdminClient();
+  const metrics = await getClaimsMetrics(supabase);
 
   let cafeIds: string[] | null = null;
   let claimantIds: string[] | null = null;
@@ -75,6 +119,7 @@ export default async function ClaimsPage({
         >
           <ClaimsListClient
             claims={[]}
+            metrics={metrics}
             page={safePage}
             total={0}
             totalPages={0}
@@ -150,6 +195,7 @@ export default async function ClaimsPage({
     >
       <ClaimsListClient
         claims={(dataResult.data ?? []) as unknown as ClaimRow[]}
+        metrics={metrics}
         page={safePage}
         total={total}
         totalPages={totalPages}

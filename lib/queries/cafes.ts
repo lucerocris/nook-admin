@@ -345,6 +345,9 @@ export type DashboardStats = {
   reviewsThisWeek: number
   activeOwners: number
   unclaimedCafes: number
+  // Claims the claims page lists by default: pending plus under_review.
+  openClaims: number
+  generatedAt: string
 }
 
 // Was 6 queries, one of which pulled every cafe_owner_cafe row over the wire
@@ -361,5 +364,9 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     // so an owner linked to several cafes was counted once per cafe.
     activeOwners:    summary.owners,
     unclaimedCafes:  summary.cafes.unclaimed,
+    openClaims:
+      (summary.claims.by_status.pending ?? 0) +
+      (summary.claims.by_status.under_review ?? 0),
+    generatedAt:     summary.generated_at,
   }
 }

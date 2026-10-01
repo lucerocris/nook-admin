@@ -15,9 +15,12 @@ export type Metric = {
 export function MetricGrid({
   metrics,
   className,
+  compact = false,
 }: {
   metrics: Metric[]
   className?: string
+  // Smaller values for context metrics that sit below the attention row.
+  compact?: boolean
 }) {
   return (
     <div
@@ -39,7 +42,13 @@ export function MetricGrid({
                 />
               )}
             </div>
-            <span className="display mt-4 text-4xl tabular-nums">
+            <span
+              className={cn(
+                "display mt-4 tabular-nums",
+                compact ? "text-3xl" : "text-4xl",
+                flagged && "text-destructive"
+              )}
+            >
               {metric.value.toLocaleString()}
             </span>
             <p className="mt-2 text-sm text-muted-foreground">{metric.note}</p>

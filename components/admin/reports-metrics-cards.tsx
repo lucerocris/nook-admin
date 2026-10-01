@@ -1,7 +1,14 @@
 import { MetricGrid } from "@/components/admin/metric-grid"
+import { formatRelativeTime } from "@/lib/utils"
 import type { ReportsMetrics } from "@/lib/types/reports"
 
-export function ReportsMetricsCards({ metrics }: { metrics: ReportsMetrics }) {
+export function ReportsMetricsCards({
+  metrics,
+  oldestPendingAt,
+}: {
+  metrics: ReportsMetrics
+  oldestPendingAt: string | null
+}) {
   return (
     <MetricGrid
       className="sm:grid-cols-3"
@@ -9,7 +16,12 @@ export function ReportsMetricsCards({ metrics }: { metrics: ReportsMetrics }) {
         {
           label: "Pending reports",
           value: metrics.pendingCount,
-          note: "New reports from cafe owners, awaiting first review",
+          note:
+            metrics.pendingCount > 0 && oldestPendingAt
+              ? `Oldest submitted ${formatRelativeTime(oldestPendingAt)}`
+              : "New reports from cafe owners, awaiting first review",
+          href: "/admin/reviews?status=pending&sort=oldest",
+          linkLabel: "Oldest first",
           attention: true,
         },
         {
