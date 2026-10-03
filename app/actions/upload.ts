@@ -10,9 +10,22 @@ const CAFE_PHOTO_LIMIT = 5
 const ALLOWED_TYPES    = ["image/jpeg", "image/png", "image/webp"]
 const MAX_SIZE_BYTES   = 10 * 1024 * 1024
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 function requireCafeId(cafeId: string | undefined): string {
   if (!cafeId) throw new Error("cafeId is required")
+  if (!UUID_RE.test(cafeId)) throw new Error("Invalid cafeId")
   return cafeId
+}
+
+// Derives the storage key from a client-supplied URL and rejects anything
+// outside the expected prefix, so a crafted URL can't delete other objects.
+function requireKeyUnder(url: string, prefix: string): string {
+  const key = getKeyFromUrl(url)
+  if (!key.startsWith(prefix) || key.includes("..")) {
+    throw new Error("Invalid file URL")
+  }
+  return key
 }
 
 function validateFile(file: File) {
@@ -117,39 +130,41 @@ export async function deleteCafePhotoAction(
   const targetCafeId = requireCafeId(cafeId)
   const supabase     = createAdminClient()
 
-  await deleteFile(getKeyFromUrl(photoUrl))
+  const key = requireKeyUnder(photoUrl, `nook/cafes/${targetCafeId}/`)
 
+  const { data: cafe, error: readError } = await supabase
+    .from("cafes")
+    .select("photo_urls")
+    .eq("id", targetCafeId)
+    .single()
+
+  if (readError) throw readError
+
+  const existing = (cafe?.photo_urls as string[]) ?? []
+
+  // Update the DB first so a failure never leaves a reference to a deleted file.
   if (isHero) {
-    const { data: cafe } = await supabase
-      .from("cafes")
-      .select("photo_urls")
-      .eq("id", targetCafeId)
-      .single()
-
-    const existing   = (cafe?.photo_urls as string[]) ?? []
     const newHero    = existing[0] ?? null
     const newGallery = existing.slice(1)
 
-    await supabase
+    const { error } = await supabase
       .from("cafes")
       .update({ featured_image_url: newHero, photo_urls: newGallery })
       .eq("id", targetCafeId)
 
+    if (error) throw error
   } else {
-    const { data: cafe } = await supabase
-      .from("cafes")
-      .select("photo_urls")
-      .eq("id", targetCafeId)
-      .single()
+    const updated = existing.filter(u => u !== photoUrl)
 
-    const existing = (cafe?.photo_urls as string[]) ?? []
-    const updated  = existing.filter(u => u !== photoUrl)
-
-    await supabase
+    const { error } = await supabase
       .from("cafes")
       .update({ photo_urls: updated })
       .eq("id", targetCafeId)
+
+    if (error) throw error
   }
+
+  await deleteFile(key)
 
   revalidatePath(`/admin/cafes/${targetCafeId}/edit`)
 }
@@ -233,14 +248,21 @@ export async function deleteMenuItemImageAction(
   await requireSuperadmin()
 
   const targetCafeId = requireCafeId(cafeId)
+  if (!UUID_RE.test(menuItemId)) throw new Error("Invalid menuItemId")
 
-  await deleteFile(getKeyFromUrl(imageUrl))
+  const key = requireKeyUnder(imageUrl, `nook/cafes/${targetCafeId}/menu/`)
 
+  // Update the DB first so a failure never leaves a reference to a deleted file.
   const supabase = createAdminClient()
-  await supabase
+  const { error } = await supabase
     .from("menu_items")
     .update({ image_url: null })
     .eq("id", menuItemId)
+    .eq("cafe_id", targetCafeId)
+
+  if (error) throw error
+
+  await deleteFile(key)
 
   revalidatePath(`/admin/cafes/${targetCafeId}/edit`)
 }
