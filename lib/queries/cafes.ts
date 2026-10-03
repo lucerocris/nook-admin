@@ -296,8 +296,10 @@ export async function getCafeById(id: string) {
       )
     `)
     .eq("id", id)
-    .single()
+    .maybeSingle()
 
+  // 22P02 = malformed uuid in the URL; treat it as "not found" rather than a 500.
+  if (error?.code === "22P02") return null
   if (error) throw error
   return data
 }
