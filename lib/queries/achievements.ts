@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin"
+import { buildIlikeOrFilter } from "@/lib/utils"
 import type {
   AchievementDef,
   AchievementInsert,
@@ -128,7 +129,7 @@ export async function searchProfiles(
   const { data, error } = await supabase
     .from("profiles")
     .select("id, username, full_name, email, avatar_url")
-    .or(`username.ilike.%${query}%,full_name.ilike.%${query}%,email.ilike.%${query}%`)
+    .or(buildIlikeOrFilter(["username", "full_name", "email"], query))
     .order("username", { ascending: true })
     .limit(20)
 

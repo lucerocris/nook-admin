@@ -15,6 +15,12 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const MAIL_FROM = process.env.MAIL_FROM ?? "Nook <noreply@nookph.app>";
 
 type ClaimStatus = "under_review" | "approved" | "rejected";
+
+// Only these claims can still be decided. Approving a rejected or withdrawn
+// claim would hand out ownership the claimant no longer has a case for, and
+// re-approving an approved one would repeat every side effect.
+const OPEN_STATUSES = ["pending", "under_review"] as const;
+const CLAIM_CLOSED_ERROR = "Claim is no longer open";
 type AuditLogMetadata = Record<string, string | number | boolean | null>;
 
 // This checked only that SOMEONE was signed in, despite the name and the error
@@ -86,12 +92,17 @@ async function updateClaimStatus(params: {
     payload.rejection_reason = params.rejectionReason;
   }
 
-  const { error } = await params.supabase
+  // The status guard makes this the lock: a claim that was already decided
+  // (or decided by another admin a moment ago) matches no row.
+  const { data, error } = await params.supabase
     .from("cafe_claims")
     .update(payload)
-    .eq("id", params.claimId);
+    .eq("id", params.claimId)
+    .in("status", [...OPEN_STATUSES])
+    .select("id");
 
   if (error) throw new Error("Failed to update claim status");
+  if (!data?.length) throw new Error(CLAIM_CLOSED_ERROR);
 }
 
 export async function markUnderReviewAction(claimId: string) {
@@ -133,7 +144,7 @@ export async function approveClaimAction(claimId: string) {
 
     const { data: claim, error: claimError } = await supabase
       .from("cafe_claims")
-      .select("id, cafe_id, claimant_id, role")
+      .select("id, cafe_id, claimant_id, role, status")
       .eq("id", claimId)
       .single();
 
@@ -143,8 +154,12 @@ export async function approveClaimAction(claimId: string) {
     }
 
     const now = new Date().toISOString();
+    const previousStatus = claim.status;
 
-    const { error: claimUpdateError } = await supabase
+    // Flip the status first, conditional on the claim still being open, so two
+    // concurrent approvals can't both proceed. Everything after this is
+    // idempotent, and a failure puts the claim back so it can be retried.
+    const { data: locked, error: claimUpdateError } = await supabase
       .from("cafe_claims")
       .update({
         status: "approved",
@@ -152,33 +167,79 @@ export async function approveClaimAction(claimId: string) {
         reviewed_at: now,
         updated_at: now,
       })
-      .eq("id", claimId);
+      .eq("id", claimId)
+      .in("status", [...OPEN_STATUSES])
+      .select("id");
 
     if (claimUpdateError) {
       console.error("[APPROVE:3] Claim update failed", claimUpdateError);
       return { success: false as const, error: "Failed to update claim" };
     }
+    if (!locked?.length) {
+      return { success: false as const, error: CLAIM_CLOSED_ERROR };
+    }
 
-    const { error: metaError } = await supabaseAdmin.auth.admin.updateUserById(
-      claim.claimant_id,
-      { app_metadata: { role: "cafe_owner", cafe_id: claim.cafe_id } },
-    );
+    const revertClaim = async () => {
+      const { error } = await supabase
+        .from("cafe_claims")
+        .update({
+          status: previousStatus,
+          reviewed_by: null,
+          reviewed_at: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", claimId);
+      if (error) console.error("[APPROVE:REVERT] Failed to revert claim", error);
+    };
 
-    if (metaError) {
-      console.error("[APPROVE:4] Auth metadata failed", metaError);
-      return { success: false as const, error: "Failed to update user role" };
+    const { data: claimant, error: claimantError } =
+      await supabaseAdmin.auth.admin.getUserById(claim.claimant_id);
+
+    if (claimantError || !claimant?.user) {
+      console.error("[APPROVE:4] Claimant lookup failed", claimantError);
+      await revertClaim();
+      return { success: false as const, error: "Failed to load claimant" };
+    }
+
+    // Never downgrade an existing role (a superadmin who files a claim must stay
+    // one) and keep any other app_metadata keys: updateUserById replaces the
+    // object it is given at the top level, so merge into the existing one.
+    const existingMetadata = claimant.user.app_metadata ?? {};
+    const existingRole = existingMetadata.role;
+
+    if (!existingRole || existingRole === "cafe_owner") {
+      const { error: metaError } = await supabaseAdmin.auth.admin.updateUserById(
+        claim.claimant_id,
+        {
+          app_metadata: {
+            ...existingMetadata,
+            role: "cafe_owner",
+            cafe_id: claim.cafe_id,
+          },
+        },
+      );
+
+      if (metaError) {
+        console.error("[APPROVE:4] Auth metadata failed", metaError);
+        await revertClaim();
+        return { success: false as const, error: "Failed to update user role" };
+      }
     }
 
     const { error: linkError } = await supabaseAdmin
       .from("cafe_owner_cafe")
-      .insert({
-        owner_id: claim.claimant_id,
-        cafe_id: claim.cafe_id,
-        role: claim.role ?? "owner",
-      });
+      .upsert(
+        {
+          owner_id: claim.claimant_id,
+          cafe_id: claim.cafe_id,
+          role: claim.role ?? "owner",
+        },
+        { onConflict: "owner_id,cafe_id", ignoreDuplicates: true },
+      );
 
     if (linkError) {
       console.error("[APPROVE:5] cafe_owner_cafe insert failed", linkError);
+      await revertClaim();
       return {
         success: false as const,
         error: "Failed to create owner–cafe link",
@@ -194,6 +255,7 @@ export async function approveClaimAction(claimId: string) {
 
     if (cafeError) {
       console.error("[APPROVE:6] Cafe update failed", cafeError);
+      await revertClaim();
       return { success: false as const, error: "Failed to update cafe" };
     }
 

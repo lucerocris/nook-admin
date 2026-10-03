@@ -4,6 +4,7 @@ import { requireSuperadmin } from "@/lib/auth/require-superadmin"
 
 import { revalidatePath } from "next/cache"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { buildIlikeOrFilter } from "@/lib/utils"
 import type { CrawlStatus } from "@/lib/types/crawls"
 import { isValidTransition } from "@/lib/types/crawls"
 
@@ -393,7 +394,7 @@ export async function searchCafesAction(
     .from("cafes")
     .select("id, name, address, neighborhood")
     .eq("status", "active")
-    .or(`name.ilike.*${q}*,address.ilike.*${q}*`)
+    .or(buildIlikeOrFilter(["name", "address"], q))
     .order("name", { ascending: true })
     .limit(20)
 
@@ -412,7 +413,7 @@ export async function searchProfilesAction(
   const { data, error } = await supabase
     .from("profiles")
     .select("id, username, avatar_url")
-    .or(`username.ilike.%${query}%,email.ilike.%${query}%`)
+    .or(buildIlikeOrFilter(["username", "email"], query))
     .order("username", { ascending: true })
     .limit(20)
 

@@ -282,7 +282,9 @@ function ClaimActions({
           <DropdownMenuContent align="end" className="w-52">
             <DropdownMenuItem
               onClick={handleMarkUnderReview}
-              disabled={isPending || claim.status === "under_review"}
+              disabled={
+                isPending || !isOpen(claim.status) || claim.status === "under_review"
+              }
             >
               <Clock />
               Mark as under review
@@ -293,7 +295,7 @@ function ClaimActions({
                 event.preventDefault();
                 openDialog("approve");
               }}
-              disabled={isPending}
+              disabled={isPending || !isOpen(claim.status)}
             >
               <CheckCircle />
               Approve claim
@@ -303,7 +305,7 @@ function ClaimActions({
                 event.preventDefault();
                 openDialog("reject");
               }}
-              disabled={isPending}
+              disabled={isPending || !isOpen(claim.status)}
             >
               <XCircle />
               Reject claim…

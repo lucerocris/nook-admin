@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin"
+import { buildIlikeOrFilter } from "@/lib/utils"
 import type {
   Crawl,
   CrawlTier,
@@ -127,7 +128,7 @@ export async function searchCafes(
     .from("cafes")
     .select("id, name, address, neighborhood")
     .eq("status", "active")
-    .or(`name.ilike.*${q}*,address.ilike.*${q}*`)
+    .or(buildIlikeOrFilter(["name", "address"], q))
     .order("name", { ascending: true })
     .limit(20)
 
@@ -244,7 +245,7 @@ export async function searchProfiles(
   const { data, error } = await supabase
     .from("profiles")
     .select("id, username, avatar_url")
-    .or(`username.ilike.%${query}%,email.ilike.%${query}%`)
+    .or(buildIlikeOrFilter(["username", "email"], query))
     .order("username", { ascending: true })
     .limit(20)
 
