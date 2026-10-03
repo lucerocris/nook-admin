@@ -144,7 +144,11 @@ function DeleteAccountDialog({
             e.preventDefault()
             startTransition(async () => {
               try {
-                await deleteUserAction(user.id)
+                const result = await deleteUserAction(user.id)
+                if (!result.success) {
+                  toast.error(result.error)
+                  return
+                }
                 toast.success(`${name}’s account deleted`)
                 setConfirmValue("")
                 onClose()
