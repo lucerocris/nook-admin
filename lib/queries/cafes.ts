@@ -248,6 +248,7 @@ export async function getCafesPage(filters?: CafeListFilters & {
       cafe_owner_cafe ( owner_id )
     `)
     .order(sort.column, { ascending: sort.ascending, nullsFirst: false })
+    .order("id")
     .range(from, to)
 
   countQuery = applyCafeListFilters(countQuery, filters)
