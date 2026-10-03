@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { escapeLikePattern } from "@/lib/utils";
 import {
   ClaimsListClient,
   type ClaimRow,
@@ -97,8 +98,8 @@ export default async function ClaimsPage({
 
   if (search) {
     const [cafesResult, profilesResult] = await Promise.all([
-      supabase.from("cafes").select("id").ilike("name", `%${search}%`),
-      supabase.from("profiles").select("id").ilike("email", `%${search}%`),
+      supabase.from("cafes").select("id").ilike("name", `%${escapeLikePattern(search)}%`),
+      supabase.from("profiles").select("id").ilike("email", `%${escapeLikePattern(search)}%`),
     ]);
 
     if (cafesResult.error) throw cafesResult.error;

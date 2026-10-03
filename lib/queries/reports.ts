@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin"
+import { buildIlikeOrFilter, escapeLikePattern } from "@/lib/utils"
 import { getAdminDashboardSummary } from "@/lib/queries/dashboard"
 import type {
   ReportRow,
@@ -82,14 +83,14 @@ async function lookupSearchTargets(
   supabase: ReturnType<typeof createAdminClient>,
   search: string
 ): Promise<SearchLookups> {
-  const like = `%${search}%`
+  const like = `%${escapeLikePattern(search)}%`
 
   const [cafes, profiles, reviewsByContent] = await Promise.all([
     supabase.from("cafes").select("id").ilike("name", like),
     supabase
       .from("profiles")
       .select("id")
-      .or(`full_name.ilike.${like},username.ilike.${like},email.ilike.${like}`),
+      .or(buildIlikeOrFilter(["full_name", "username", "email"], search)),
     supabase.from("reviews").select("id").ilike("content", like),
   ])
 

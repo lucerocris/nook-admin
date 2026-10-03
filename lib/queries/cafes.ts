@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { escapeLikePattern } from "@/lib/utils"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getAdminDashboardSummary } from "@/lib/queries/dashboard"
 
@@ -35,12 +36,6 @@ type CafeListFilters = {
   neighborhood?: string
   search?: string
   featured?: string
-}
-
-// PostgREST treats these as literal characters inside an ilike pattern, so a
-// search for "100% arabica" would otherwise match far more than it should.
-function escapeLikePattern(value: string) {
-  return value.replace(/[\\%_]/g, (char) => `\\${char}`)
 }
 
 // Neighborhood is intentionally NOT handled here — it is resolved to cafe ids
