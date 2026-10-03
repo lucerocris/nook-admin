@@ -3,21 +3,14 @@
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
-import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Field } from "@/components/admin/form-kit"
+import { AuthError, AuthShell, authInputClass } from "@/components/login-form"
 
 type Stage = "loading" | "form" | "error"
 
-function SetPasswordForm({ className }: React.ComponentProps<"div">) {
+function SetPasswordForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = createClient()
@@ -26,6 +19,8 @@ function SetPasswordForm({ className }: React.ComponentProps<"div">) {
   const [role, setRole] = React.useState<string | null>(null)
   const [newPassword, setNewPassword] = React.useState("")
   const [confirmPassword, setConfirmPassword] = React.useState("")
+  const [newPasswordError, setNewPasswordError] = React.useState("")
+  const [confirmPasswordError, setConfirmPasswordError] = React.useState("")
   const [formError, setFormError] = React.useState("")
   const [saving, setSaving] = React.useState(false)
 
@@ -66,19 +61,24 @@ function SetPasswordForm({ className }: React.ComponentProps<"div">) {
   }, [])
 
   async function handleSetPassword() {
+    setFormError("")
     if (!newPassword || !confirmPassword) {
-      setFormError("Please fill in both fields")
+      setNewPasswordError(newPassword ? "" : "Enter a new password.")
+      setConfirmPasswordError(confirmPassword ? "" : "Type the password again to confirm it.")
       return
     }
     if (newPassword !== confirmPassword) {
-      setFormError("Passwords do not match")
+      setNewPasswordError("")
+      setConfirmPasswordError("Passwords don’t match. Type the same password in both fields.")
       return
     }
     if (newPassword.length < 8) {
-      setFormError("Password must be at least 8 characters")
+      setNewPasswordError("Use at least 8 characters.")
+      setConfirmPasswordError("")
       return
     }
-    setFormError("")
+    setNewPasswordError("")
+    setConfirmPasswordError("")
     setSaving(true)
 
     const { data, error } = await supabase.auth.updateUser({
@@ -87,7 +87,7 @@ function SetPasswordForm({ className }: React.ComponentProps<"div">) {
     })
 
     if (error) {
-      setFormError(error.message)
+      setFormError(`We couldn’t save your password: ${error.message}`)
       setSaving(false)
       return
     }
@@ -105,107 +105,78 @@ function SetPasswordForm({ className }: React.ComponentProps<"div">) {
   }
 
   if (stage === "loading") {
-    return (
-      <div className={cn("flex flex-col gap-6", className)}>
-        <Card className="overflow-hidden p-0">
-          <CardContent className="p-6 md:p-8 flex flex-col items-center gap-3 text-center">
-            <p className="text-sm text-muted-foreground">Verifying your link…</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
+    return <AuthShell title="Set your password" description="Verifying your link…" />
   }
 
   if (stage === "error") {
     return (
-      <div className={cn("flex flex-col gap-6", className)}>
-        <Card className="overflow-hidden p-0">
-          <CardContent className="p-6 md:p-8 flex flex-col items-center gap-4 text-center">
-            <h1 className="text-2xl font-bold">Link expired</h1>
-            <p className="text-sm text-muted-foreground">
-              This link has expired or already been used. Please request a new
-              one.
-            </p>
-            <Button variant="outline" onClick={() => router.push("/login")}>
-              Back to login
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      <AuthShell
+        title="This link has expired"
+        description="It’s expired or has already been used. Go back to sign in and choose “Forgot your password?” to get a new one."
+      >
+        <Button className="w-full" onClick={() => router.push("/login")}>
+          Back to sign in
+        </Button>
+      </AuthShell>
     )
   }
 
   return (
-    <div className={cn("flex flex-col gap-6", className)}>
-      <Card className="overflow-hidden p-0">
-        <CardContent className="grid p-0 md:grid-cols-2">
-          <form
-            className="p-6 md:p-8"
-            onSubmit={(e) => {
-              e.preventDefault()
-              handleSetPassword()
-            }}
-          >
-            <FieldGroup>
-              <div className="flex flex-col items-center gap-2 text-center">
-                <h1 className="text-2xl font-bold">Set new password</h1>
-                <p className="text-sm text-balance text-muted-foreground">
-                  Choose a strong password for your account.
-                </p>
-              </div>
-
-              <Field>
-                <Field className="grid grid-cols-2 gap-4">
-                  <Field>
-                    <FieldLabel htmlFor="new-password">New password</FieldLabel>
-                    <Input
-                      id="new-password"
-                      type="password"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      required
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="confirm-password">
-                      Confirm password
-                    </FieldLabel>
-                    <Input
-                      id="confirm-password"
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      required
-                    />
-                  </Field>
-                </Field>
-                <FieldDescription>Must be at least 8 characters long.</FieldDescription>
-                {formError && <FieldError>{formError}</FieldError>}
-              </Field>
-
-              <Field>
-                <Button type="submit" className="w-full" disabled={saving}>
-                  {saving ? "Saving…" : "Set password"}
-                </Button>
-              </Field>
-            </FieldGroup>
-          </form>
-
-          <div className="relative hidden bg-muted md:block" />
-        </CardContent>
-      </Card>
-    </div>
+    <AuthShell title="Set your password" description="Choose a password for your Nook admin account.">
+      <form
+        className="flex flex-col gap-4"
+        noValidate
+        onSubmit={(e) => {
+          e.preventDefault()
+          handleSetPassword()
+        }}
+      >
+        <Field
+          label="New password"
+          htmlFor="new-password"
+          hint="At least 8 characters."
+          error={newPasswordError}
+        >
+          <Input
+            id="new-password"
+            type="password"
+            autoComplete="new-password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            aria-invalid={!!newPasswordError || undefined}
+            aria-describedby="new-password-hint"
+            className={authInputClass}
+            required
+          />
+        </Field>
+        <Field label="Confirm password" htmlFor="confirm-password" error={confirmPasswordError}>
+          <Input
+            id="confirm-password"
+            type="password"
+            autoComplete="new-password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            aria-invalid={!!confirmPasswordError || undefined}
+            aria-describedby={confirmPasswordError ? "confirm-password-hint" : undefined}
+            className={authInputClass}
+            required
+          />
+        </Field>
+        {formError && <AuthError>{formError}</AuthError>}
+        <Button type="submit" className="mt-2 w-full" loading={saving} loadingText="Saving…">
+          Set password
+        </Button>
+      </form>
+    </AuthShell>
   )
 }
 
 export default function SetPasswordPage() {
+  // useSearchParams needs a Suspense boundary; the fallback is the same frame
+  // the form shows while it verifies the link.
   return (
-    <div className="flex min-h-svh flex-col items-center justify-center bg-muted p-6 md:p-10">
-      <div className="w-full max-w-sm md:max-w-4xl">
-        <React.Suspense fallback={null}>
-          <SetPasswordForm />
-        </React.Suspense>
-      </div>
-    </div>
+    <React.Suspense fallback={<AuthShell title="Set your password" description="Verifying your link…" />}>
+      <SetPasswordForm />
+    </React.Suspense>
   )
 }

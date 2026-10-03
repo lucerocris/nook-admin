@@ -1,5 +1,10 @@
 import type { Metadata } from "next"
-import { getUsers, type UserSort, type UserStatusFilter } from "@/lib/queries/users"
+import {
+  getUsers,
+  getUserStatusCounts,
+  type UserSort,
+  type UserStatusFilter,
+} from "@/lib/queries/users"
 import { UsersClient } from "@/components/admin/users-client"
 
 export const metadata: Metadata = { title: "Users" }
@@ -32,12 +37,15 @@ export default async function UsersPage({
   // Search, filter, sort and paging are resolved server-side now. They used to
   // run in the browser over the whole user table, so the page could not grow
   // past what a single payload could carry.
-  const result = await getUsers({
-    q: search,
-    status: parseStatus(status),
-    sort: parseSort(sort),
-    page: Number(page) || 1,
-  })
+  const [result, statusCounts] = await Promise.all([
+    getUsers({
+      q: search,
+      status: parseStatus(status),
+      sort: parseSort(sort),
+      page: Number(page) || 1,
+    }),
+    getUserStatusCounts(),
+  ])
 
   return (
     <UsersClient
@@ -45,10 +53,10 @@ export default async function UsersPage({
       total={result.total}
       page={result.page}
       pageSize={result.pageSize}
-      hasMore={result.hasMore}
-      search={search ?? ""}
+      totalPages={Math.max(1, Math.ceil(result.total / result.pageSize))}
       status={parseStatus(status)}
       sort={parseSort(sort)}
+      statusCounts={statusCounts}
     />
   )
 }

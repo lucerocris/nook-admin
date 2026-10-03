@@ -244,6 +244,7 @@ export async function getCafesPage(filters?: CafeListFilters & {
       status,
       rating,
       is_featured,
+      created_at,
       cafe_owner_cafe ( owner_id )
     `)
     .order(sort.column, { ascending: sort.ascending, nullsFirst: false })
@@ -368,5 +369,28 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       (summary.claims.by_status.pending ?? 0) +
       (summary.claims.by_status.under_review ?? 0),
     generatedAt:     summary.generated_at,
+  }
+}
+
+/** Listing counts per status, for the Cafés page tabs. */
+export async function getCafeStatusCounts() {
+  const supabase = createAdminClient()
+  const count = (status?: string) => {
+    let q = supabase.from("cafes").select("id", { count: "exact", head: true })
+    if (status) q = q.eq("status", status)
+    return q
+  }
+  const [all, active, draft, inactive] = await Promise.all([
+    count(),
+    count("active"),
+    count("draft"),
+    count("inactive"),
+  ])
+  for (const r of [all, active, draft, inactive]) if (r.error) throw r.error
+  return {
+    all: all.count ?? 0,
+    active: active.count ?? 0,
+    draft: draft.count ?? 0,
+    inactive: inactive.count ?? 0,
   }
 }

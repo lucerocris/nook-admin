@@ -1,12 +1,11 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import type { Metric } from "@/components/admin/metric-grid";
-import { getAdminDashboardSummary } from "@/lib/queries/dashboard";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   ClaimsListClient,
   type ClaimRow,
   type ClaimStatus,
+  type ClaimStatusCounts,
 } from "@/app/admin/claims/components/claims-list-client";
 
 export const metadata: Metadata = { title: "Claims" };
@@ -20,49 +19,45 @@ const ALLOWED_STATUSES = new Set<ClaimStatus>([
   "withdrawn",
 ]);
 
-function toPostgrestList(values: string[]) {
-  return values.map((value) => `"${value}"`).join(",");
-}
-
-// Pending and under-review counts come from the cached dashboard summary. The
-// summary has no resolved-this-week figure for claims, so that one is counted
-// here from reviewed_at.
-async function getClaimsMetrics(
+// Tab counts ignore the search box, like every other table page: they say how
+// much sits in each status, not how much matches what was typed.
+async function getStatusCounts(
   supabase: ReturnType<typeof createAdminClient>,
-): Promise<Metric[]> {
-  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const [summary, resolvedResult] = await Promise.all([
-    getAdminDashboardSummary(),
+): Promise<{ counts: ClaimStatusCounts; oldestOpenAt: string | null }> {
+  const statuses = [...ALLOWED_STATUSES];
+  const [countResults, oldestResult] = await Promise.all([
+    Promise.all(
+      statuses.map((s) =>
+        supabase
+          .from("cafe_claims")
+          .select("id", { count: "exact", head: true })
+          .eq("status", s),
+      ),
+    ),
     supabase
       .from("cafe_claims")
-      .select("id", { count: "exact", head: true })
-      .in("status", ["approved", "rejected"])
-      .gte("reviewed_at", weekAgo),
+      .select("created_at")
+      .in("status", DEFAULT_STATUSES)
+      .order("created_at", { ascending: true })
+      .limit(1),
   ]);
-  if (resolvedResult.error) throw resolvedResult.error;
 
-  return [
-    {
-      label: "Pending claims",
-      value: summary.claims.by_status.pending ?? 0,
-      note: "Submitted, not yet picked up by an admin",
-      href: "/admin/claims?status=pending",
-      linkLabel: "Pending only",
-      attention: true,
-    },
-    {
-      label: "Under review",
-      value: summary.claims.by_status.under_review ?? 0,
-      note: "Claims an admin is verifying",
-      href: "/admin/claims?status=under_review",
-      linkLabel: "Under review only",
-    },
-    {
-      label: "Resolved this week",
-      value: resolvedResult.count ?? 0,
-      note: "Approved and rejected in the last 7 days",
-    },
-  ];
+  const counts = {} as ClaimStatusCounts;
+  statuses.forEach((s, i) => {
+    const result = countResults[i];
+    if (result.error) throw result.error;
+    counts[s] = result.count ?? 0;
+  });
+  if (oldestResult.error) throw oldestResult.error;
+
+  return {
+    counts,
+    oldestOpenAt: oldestResult.data?.[0]?.created_at ?? null,
+  };
+}
+
+function toPostgrestList(values: string[]) {
+  return values.map((value) => `"${value}"`).join(",");
 }
 
 export default async function ClaimsPage({
@@ -91,7 +86,11 @@ export default async function ClaimsPage({
 
   const search = rawSearch?.trim() ?? "";
   const supabase = createAdminClient();
-  const metrics = await getClaimsMetrics(supabase);
+  const statusCountsPromise = getStatusCounts(supabase);
+  // Started early so it runs alongside the search lookups; if one of those
+  // throws first, this keeps the pending count query from surfacing as an
+  // unhandled rejection. Awaiting it below still throws its own errors.
+  statusCountsPromise.catch(() => {});
 
   let cafeIds: string[] | null = null;
   let claimantIds: string[] | null = null;
@@ -109,20 +108,17 @@ export default async function ClaimsPage({
     claimantIds = (profilesResult.data ?? []).map((row) => row.id);
 
     if (cafeIds.length === 0 && claimantIds.length === 0) {
+      const { counts, oldestOpenAt } = await statusCountsPromise;
       return (
-        <Suspense
-          fallback={
-            <div className="p-8 text-center text-muted-foreground">
-              Loading claims...
-            </div>
-          }
-        >
+        <Suspense fallback={null}>
           <ClaimsListClient
             claims={[]}
-            metrics={metrics}
             page={safePage}
+            pageSize={pageSize}
             total={0}
             totalPages={0}
+            statusCounts={counts}
+            oldestOpenAt={oldestOpenAt}
           />
         </Suspense>
       );
@@ -177,7 +173,8 @@ export default async function ClaimsPage({
     }
   }
 
-  const [countResult, dataResult] = await Promise.all([countQuery, dataQuery]);
+  const [countResult, dataResult, { counts, oldestOpenAt }] =
+    await Promise.all([countQuery, dataQuery, statusCountsPromise]);
 
   if (countResult.error) throw countResult.error;
   if (dataResult.error) throw dataResult.error;
@@ -186,19 +183,17 @@ export default async function ClaimsPage({
   const totalPages = total > 0 ? Math.ceil(total / pageSize) : 0;
 
   return (
-    <Suspense
-      fallback={
-        <div className="p-8 text-center text-muted-foreground">
-          Loading claims...
-        </div>
-      }
-    >
+    // The route's loading skeleton (app/admin/loading.tsx) covers navigation;
+    // this boundary only satisfies useSearchParams in the client list.
+    <Suspense fallback={null}>
       <ClaimsListClient
         claims={(dataResult.data ?? []) as unknown as ClaimRow[]}
-        metrics={metrics}
         page={safePage}
+        pageSize={pageSize}
         total={total}
         totalPages={totalPages}
+        statusCounts={counts}
+        oldestOpenAt={oldestOpenAt}
       />
     </Suspense>
   );

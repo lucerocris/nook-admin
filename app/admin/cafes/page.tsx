@@ -1,8 +1,8 @@
 import type { Metadata } from "next"
-import { getCafeNeighborhoods, getCafesPage } from "@/lib/queries/cafes"
+import { getCafeNeighborhoods, getCafesPage, getCafeStatusCounts } from "@/lib/queries/cafes"
 import { getAllTagsAdmin } from "@/lib/queries/tags"
 
-export const metadata: Metadata = { title: "Cafes" }
+export const metadata: Metadata = { title: "Cafés" }
 import { CafeListClient } from "@/components/admin/cafe-list-client"
 
 export default async function CafesPage({
@@ -31,7 +31,8 @@ export default async function CafesPage({
   } = await searchParams
   const page = rawPage ? Number(rawPage) : 1
 
-  const [{ cafes, total, totalPages }, neighborhoods, tags] = await Promise.all([
+  const PAGE_SIZE = 20
+  const [{ cafes, total, totalPages }, neighborhoods, tags, statusCounts] = await Promise.all([
     getCafesPage({
       status,
       neighborhood,
@@ -41,10 +42,11 @@ export default async function CafesPage({
       owner,
       sort,
       page: Number.isFinite(page) ? page : 1,
-      pageSize: 10,
+      pageSize: PAGE_SIZE,
     }),
     getCafeNeighborhoods(),
     getAllTagsAdmin(),
+    getCafeStatusCounts(),
   ])
 
   const tagOptions = tags
@@ -63,6 +65,8 @@ export default async function CafesPage({
       page={Number.isFinite(page) && page > 0 ? page : 1}
       total={total}
       totalPages={totalPages}
+      pageSize={PAGE_SIZE}
+      statusCounts={statusCounts}
     />
   )
 }

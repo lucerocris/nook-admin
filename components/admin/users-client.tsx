@@ -1,35 +1,20 @@
 "use client"
 
 import * as React from "react"
-import { useRouter, useSearchParams } from "next/navigation"
 import {
-  MagnifyingGlass,
-  DotsThree,
-  Eye,
-  Prohibit,
   ArrowCounterClockwise,
+  DotsThree,
+  Prohibit,
   Trash,
+  Users as UsersIcon,
 } from "@phosphor-icons/react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,13 +33,36 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import {
-  suspendUserAction,
-  deleteUserAction,
-} from "@/app/admin/users/actions"
-import type { AppUser, UserSort, UserStatusFilter } from "@/lib/queries/users"
-import { PageTitle } from "@/components/admin/page-header"
+  BulkBar,
+  FilterChips,
+  FilterSelect,
+  PageHeader,
+  SearchField,
+  SelectAllCheckbox,
+  StatusChip,
+  StatusTabs,
+  TableCard,
+  TableEmpty,
+  TableFooter,
+  TD,
+  TH,
+  Toolbar,
+  TR,
+  shortDate,
+  useDebouncedSearch,
+  useUrlState,
+  type ActiveFilter,
+} from "@/components/admin/table-kit"
+import { suspendUserAction, deleteUserAction } from "@/app/admin/users/actions"
+import type { AppUser, UserSort, UserStatusCounts, UserStatusFilter } from "@/lib/queries/users"
 
-type UserStatus = "Active" | "Suspended"
+const SORTS = [
+  { value: "recent", label: "Recently joined" },
+  { value: "reviews", label: "Most reviews" },
+  { value: "az", label: "Name A–Z" },
+]
+
+const FILTER_KEYS = ["search", "sort"]
 
 function getInitials(user: AppUser) {
   if (user.full_name) {
@@ -62,6 +70,7 @@ function getInitials(user: AppUser) {
       .split(" ")
       .map((n) => n[0])
       .join("")
+      .slice(0, 2)
       .toUpperCase()
   }
   return user.email?.[0].toUpperCase() ?? "?"
@@ -71,33 +80,25 @@ function getDisplayName(user: AppUser) {
   return user.full_name ?? user.username ?? user.email ?? "—"
 }
 
-function formatDate(isoString: string) {
-  return new Date(isoString).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  })
+function UserAvatar({ user }: { user: AppUser }) {
+  return (
+    <Avatar>
+      {user.avatar_url && <AvatarImage src={user.avatar_url} alt="" />}
+      <AvatarFallback className="text-xs font-medium">{getInitials(user)}</AvatarFallback>
+    </Avatar>
+  )
 }
 
-function StatusBadge({ status }: { status: UserStatus }) {
-  if (status === "Active") {
-    return (
-      <Badge
-        variant="outline"
-        className="text-green-700 border-green-300 bg-green-50 dark:bg-green-950 dark:text-green-400 dark:border-green-800"
-      >
-        Active
-      </Badge>
-    )
-  }
-  return (
-    <Badge
-      variant="outline"
-      className="text-red-700 border-red-300 bg-red-50 dark:bg-red-950 dark:text-red-400 dark:border-red-800"
-    >
-      Suspended
-    </Badge>
+function UserStatusChip({ user }: { user: AppUser }) {
+  return user.is_suspended ? (
+    <StatusChip tone="danger">Suspended</StatusChip>
+  ) : (
+    <StatusChip tone="success">Active</StatusChip>
   )
+}
+
+function reviewCount(n: number) {
+  return `${n.toLocaleString()} ${n === 1 ? "review" : "reviews"}`
 }
 
 function DeleteAccountDialog({
@@ -109,17 +110,19 @@ function DeleteAccountDialog({
 }) {
   const [confirmValue, setConfirmValue] = React.useState("")
   const [isPending, startTransition] = React.useTransition()
+  const name = getDisplayName(user)
 
   return (
     <AlertDialogContent>
       <AlertDialogHeader>
-        <AlertDialogTitle>Delete account?</AlertDialogTitle>
+        <AlertDialogTitle>Delete {name}’s account?</AlertDialogTitle>
         <AlertDialogDescription>
-          Type DELETE to confirm. This removes all reviews, favorites, and
-          cannot be undone.
+          Their reviews and favorites are removed with it. This can’t be undone. Type DELETE to
+          confirm.
         </AlertDialogDescription>
       </AlertDialogHeader>
       <Input
+        aria-label="Type DELETE to confirm"
         placeholder="Type DELETE"
         value={confirmValue}
         onChange={(e) => setConfirmValue(e.target.value)}
@@ -136,21 +139,22 @@ function DeleteAccountDialog({
         <AlertDialogAction
           variant="destructive"
           disabled={confirmValue !== "DELETE" || isPending}
-          onClick={() => {
+          onClick={(e) => {
+            // Stay open while the delete runs; close on success.
+            e.preventDefault()
             startTransition(async () => {
               try {
                 await deleteUserAction(user.id)
-                toast.success("User deleted")
+                toast.success(`${name}’s account deleted`)
                 setConfirmValue("")
                 onClose()
               } catch (error) {
-                const message = error instanceof Error ? error.message : "Failed to delete user"
-                toast.error(message)
+                toast.error(error instanceof Error ? error.message : "Couldn’t delete the account")
               }
             })
           }}
         >
-          Delete
+          {isPending ? "Deleting…" : "Delete account"}
         </AlertDialogAction>
       </AlertDialogFooter>
     </AlertDialogContent>
@@ -165,13 +169,14 @@ function SuspendDialog({
   onClose: () => void
 }) {
   const [isPending, startTransition] = React.useTransition()
+  const name = getDisplayName(user)
 
   return (
     <AlertDialogContent>
       <AlertDialogHeader>
-        <AlertDialogTitle>Suspend user?</AlertDialogTitle>
+        <AlertDialogTitle>Suspend {name}?</AlertDialogTitle>
         <AlertDialogDescription>
-          This user will be locked out and all their reviews will be hidden.
+          They’re locked out of the app and all their reviews are hidden until you unsuspend them.
         </AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter>
@@ -179,20 +184,20 @@ function SuspendDialog({
         <AlertDialogAction
           variant="destructive"
           disabled={isPending}
-          onClick={() => {
+          onClick={(e) => {
+            e.preventDefault()
             startTransition(async () => {
               try {
                 await suspendUserAction(user.id, true)
-                toast.success("User suspended")
+                toast.success(`${name} suspended`)
                 onClose()
               } catch (error) {
-                const message = error instanceof Error ? error.message : "Failed to suspend user"
-                toast.error(message)
+                toast.error(error instanceof Error ? error.message : "Couldn’t suspend the user")
               }
             })
           }}
         >
-          Suspend
+          {isPending ? "Suspending…" : "Suspend user"}
         </AlertDialogAction>
       </AlertDialogFooter>
     </AlertDialogContent>
@@ -204,6 +209,7 @@ type DialogMode = "suspend" | "delete" | null
 function UserActions({ user }: { user: AppUser }) {
   const [dialogMode, setDialogMode] = React.useState<DialogMode>(null)
   const [isPending, startTransition] = React.useTransition()
+  const name = getDisplayName(user)
 
   return (
     <AlertDialog
@@ -214,49 +220,37 @@ function UserActions({ user }: { user: AppUser }) {
     >
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon-sm" disabled={isPending} aria-label={`Actions for ${name}`}>
             <DotsThree weight="bold" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem
-            onSelect={() => {
-              console.log(`Viewing reviews for ${getDisplayName(user)}`)
-            }}
-          >
-            <Eye />
-            View Reviews
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          {!user.is_suspended && (
-            <DropdownMenuItem
-              variant="destructive"
-              onSelect={(e) => {
-                e.preventDefault()
-                setDialogMode("suspend")
-              }}
-            >
-              <Prohibit />
-              Suspend User
-            </DropdownMenuItem>
-          )}
-          {user.is_suspended && (
+        <DropdownMenuContent align="end" className="w-44">
+          {user.is_suspended ? (
             <DropdownMenuItem
               disabled={isPending}
               onSelect={() => {
                 startTransition(async () => {
                   try {
                     await suspendUserAction(user.id, false)
-                    toast.success("User unsuspended")
+                    toast.success(`${name} unsuspended`)
                   } catch (error) {
-                    const message = error instanceof Error ? error.message : "Failed to unsuspend user"
-                    toast.error(message)
+                    toast.error(error instanceof Error ? error.message : "Couldn’t unsuspend the user")
                   }
                 })
               }}
             >
               <ArrowCounterClockwise />
-              Unsuspend User
+              Unsuspend user
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault()
+                setDialogMode("suspend")
+              }}
+            >
+              <Prohibit />
+              Suspend user
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator />
@@ -268,17 +262,13 @@ function UserActions({ user }: { user: AppUser }) {
             }}
           >
             <Trash />
-            Delete Account
+            Delete account
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {dialogMode === "suspend" && (
-        <SuspendDialog user={user} onClose={() => setDialogMode(null)} />
-      )}
-      {dialogMode === "delete" && (
-        <DeleteAccountDialog user={user} onClose={() => setDialogMode(null)} />
-      )}
+      {dialogMode === "suspend" && <SuspendDialog user={user} onClose={() => setDialogMode(null)} />}
+      {dialogMode === "delete" && <DeleteAccountDialog user={user} onClose={() => setDialogMode(null)} />}
     </AlertDialog>
   )
 }
@@ -288,204 +278,282 @@ export function UsersClient({
   total,
   page,
   pageSize,
-  hasMore,
-  search,
+  totalPages,
   status,
   sort,
+  statusCounts,
 }: {
   users: AppUser[]
   total: number
   page: number
   pageSize: number
-  hasMore: boolean
-  search: string
+  totalPages: number
   status: UserStatusFilter
   sort: UserSort
+  statusCounts: UserStatusCounts
 }) {
-  const router = useRouter()
-  const params = useSearchParams()
+  // Search/filter/sort/paging are resolved by the server, so they live in the
+  // URL rather than component state. `users` is already the current page.
+  // The search box is debounced so a keystroke does not fire a query per
+  // character: each change is a real round trip.
+  const url = useUrlState()
+  const search = useDebouncedSearch()
+  const [selected, setSelected] = React.useState<Set<string>>(new Set())
+  const [bulkPending, startBulk] = React.useTransition()
+  const [confirmBulkSuspend, setConfirmBulkSuspend] = React.useState(false)
 
-  // Search/filter/sort/paging are resolved by the server now, so they live in
-  // the URL rather than component state. `users` is already the current page.
-  const updateParam = React.useCallback(
-    (key: string, value: string, resetPage = true) => {
-      const next = new URLSearchParams(params.toString())
-      if (value && value !== "all" && value !== "recent") {
-        next.set(key, value)
-      } else {
-        next.delete(key)
-      }
-      if (resetPage) next.delete("page")
-      const query = next.toString()
-      router.push(query ? `/admin/users?${query}` : "/admin/users")
-    },
-    [params, router]
-  )
+  // Selection is per page: a new page or filter is a new set of rows.
+  const rowKey = users.map((u) => u.id).join(",")
+  React.useEffect(() => setSelected(new Set()), [rowKey])
 
-  // Debounced so a keystroke does not fire a query per character. The server
-  // now does the filtering, so each change is a real round trip.
-  const [searchDraft, setSearchDraft] = React.useState(search)
-  const isFirstRender = React.useRef(true)
+  const filters: ActiveFilter[] = []
+  if (url.get("search"))
+    filters.push({ key: "search", label: "Search", value: `“${url.get("search")}”`, onRemove: () => url.set("search", "") })
 
-  React.useEffect(() => {
-    setSearchDraft(search)
-  }, [search])
+  const allOnPage = users.length > 0 && users.every((u) => selected.has(u.id))
+  const someOnPage = users.some((u) => selected.has(u.id))
 
-  React.useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false
-      return
-    }
-    if (searchDraft === search) return
-    const timer = setTimeout(() => updateParam("search", searchDraft), 300)
-    return () => clearTimeout(timer)
-  }, [searchDraft, search, updateParam])
-
-  function goToPage(nextPage: number) {
-    const next = new URLSearchParams(params.toString())
-    if (nextPage > 1) next.set("page", String(nextPage))
-    else next.delete("page")
-    const query = next.toString()
-    router.push(query ? `/admin/users?${query}` : "/admin/users")
+  function toggle(id: string, on: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
   }
 
-  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1
-  const rangeEnd = Math.min(page * pageSize, total)
+  const toSuspend = users.filter((u) => selected.has(u.id) && !u.is_suspended)
+  const toUnsuspend = users.filter((u) => selected.has(u.id) && u.is_suspended)
+
+  // suspendUserAction takes one id, so a bulk change is one call per user.
+  // Deleting stays one account at a time, behind its typed confirmation.
+  function bulkSuspend(suspend: boolean) {
+    const targets = suspend ? toSuspend : toUnsuspend
+    if (targets.length === 0) {
+      toast.info(suspend ? "Everyone selected is already suspended" : "No one selected is suspended")
+      return
+    }
+    startBulk(async () => {
+      const results = await Promise.allSettled(targets.map((u) => suspendUserAction(u.id, suspend)))
+      const failed = results.filter((r) => r.status === "rejected").length
+      const done = targets.length - failed
+      if (done > 0) toast.success(`${done} ${done === 1 ? "user" : "users"} ${suspend ? "suspended" : "unsuspended"}`)
+      if (failed > 0) toast.error(`${failed} couldn’t be changed. Try them again.`)
+      setSelected(new Set())
+      setConfirmBulkSuspend(false)
+    })
+  }
+
+  const hasFilters = filters.length > 0
+  const empty =
+    users.length === 0 ? (
+      hasFilters || status !== "all" ? (
+        <TableEmpty
+          icon={UsersIcon}
+          title={status === "suspended" && !hasFilters ? "No one is suspended" : "No users match"}
+          body={
+            status === "suspended" && !hasFilters
+              ? "Suspended users show up here until you unsuspend them."
+              : "Try a different search or another tab."
+          }
+          action={
+            <Button variant="outline" size="sm" onClick={() => url.clear([...FILTER_KEYS, "status"])}>
+              Clear filters
+            </Button>
+          }
+        />
+      ) : (
+        <TableEmpty
+          icon={UsersIcon}
+          title="No users yet"
+          body="People who sign up in the Nook app show up here."
+        />
+      )
+    ) : undefined
 
   return (
-    <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 px-4 py-6 lg:px-6">
-      {/* Section 1 — Page header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <PageTitle
-          eyebrow="Community"
-          title="Users"
-          lead="All registered app users"
-        />
-      </div>
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8">
+      <PageHeader
+        title="Users"
+        summary={`${statusCounts.all.toLocaleString()} people use the Nook app · ${statusCounts.suspended.toLocaleString()} suspended`}
+      />
 
-      {/* Section 2 — Search bar */}
-      <div className="flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-[200px]">
-          <MagnifyingGlass className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-          <Input
-            className="pl-8"
-            placeholder="Search by name or email..."
-            value={searchDraft}
-            onChange={(e) => setSearchDraft(e.target.value)}
+      <StatusTabs
+        value={status}
+        onChange={(v) => url.set("status", v, "all")}
+        tabs={[
+          { value: "all", label: "All", count: statusCounts.all },
+          { value: "active", label: "Active", count: statusCounts.active },
+          { value: "suspended", label: "Suspended", count: statusCounts.suspended },
+        ]}
+      />
+
+      {selected.size > 0 ? (
+        <BulkBar count={selected.size} onClear={() => setSelected(new Set())}>
+          <Button variant="outline" size="sm" loading={bulkPending} onClick={() => bulkSuspend(false)}>
+            <ArrowCounterClockwise aria-hidden />
+            Unsuspend
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            loading={bulkPending}
+            onClick={() => {
+              if (toSuspend.length === 0) bulkSuspend(true)
+              else setConfirmBulkSuspend(true)
+            }}
+          >
+            <Prohibit aria-hidden />
+            Suspend
+          </Button>
+        </BulkBar>
+      ) : (
+        <Toolbar>
+          <SearchField value={search.value} onChange={search.onChange} placeholder="Search by name or email" />
+          <FilterSelect
+            label="Sort"
+            value={sort}
+            allValue="recent"
+            allLabel="Recently joined"
+            onChange={(v) => url.set("sort", v, "recent")}
+            options={SORTS.filter((s) => s.value !== "recent")}
           />
-        </div>
+        </Toolbar>
+      )}
 
-        <Select
-          value={status}
-          onValueChange={(v) => updateParam("status", v)}
-        >
-          <SelectTrigger className="w-full sm:w-[160px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="suspended">Suspended</SelectItem>
-          </SelectContent>
-        </Select>
+      <FilterChips filters={filters} onClearAll={() => url.clear(FILTER_KEYS)} />
 
-        <Select value={sort} onValueChange={(v) => updateParam("sort", v)}>
-          <SelectTrigger className="w-full sm:w-[180px]">
-            <SelectValue placeholder="Sort" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="recent">Recently Joined</SelectItem>
-            <SelectItem value="reviews">Most Reviews</SelectItem>
-            <SelectItem value="az">A–Z</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Section 3 — Users table */}
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>User</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Joined</TableHead>
-              <TableHead className="text-center">Reviews</TableHead>
-              <TableHead className="text-center">Favorites</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {users.map((user) => (
-              <TableRow key={user.id}>
-                <TableCell>
-                  <div className="flex items-center gap-3">
-                    <div className="size-8 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-muted-foreground shrink-0">
-                      {getInitials(user)}
-                    </div>
-                    <span className="text-sm font-medium">
-                      {getDisplayName(user)}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <span className="text-sm text-muted-foreground">
-                    {user.email ?? "—"}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <span className="text-sm text-muted-foreground">
-                    {formatDate(user.created_at)}
-                  </span>
-                </TableCell>
-                <TableCell className="text-center">
-                  <span className="text-sm tabular-nums">
-                    {user.review_count}
-                  </span>
-                </TableCell>
-                <TableCell className="text-center">
-                  <span className="text-sm tabular-nums">{user.fav_count}</span>
-                </TableCell>
-                <TableCell>
-                  <StatusBadge
-                    status={user.is_suspended ? "Suspended" : "Active"}
+      <TableCard
+        busy={url.isPending}
+        empty={empty}
+        table={
+          <Table>
+            <TableHeader>
+              <TableRow className="border-b hover:bg-transparent">
+                <TableHead className={`${TH} w-10`}>
+                  <SelectAllCheckbox
+                    checked={allOnPage}
+                    indeterminate={someOnPage && !allOnPage}
+                    onChange={(on) => setSelected(on ? new Set(users.map((u) => u.id)) : new Set())}
                   />
-                </TableCell>
-                <TableCell className="text-right">
-                  <UserActions user={user} />
-                </TableCell>
+                </TableHead>
+                <TableHead className={TH}>User</TableHead>
+                <TableHead className={TH}>Status</TableHead>
+                <TableHead className={`${TH} text-right`}>Reviews</TableHead>
+                <TableHead className={TH}>Joined</TableHead>
+                <TableHead className={`${TH} w-12`}>
+                  <span className="sr-only">Actions</span>
+                </TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+            </TableHeader>
+            <TableBody>
+              {users.map((user) => {
+                const isSelected = selected.has(user.id)
+                const name = getDisplayName(user)
+                return (
+                  <TableRow key={user.id} data-state={isSelected ? "selected" : undefined} className={TR}>
+                    <TableCell className={TD}>
+                      <Checkbox
+                        aria-label={`Select ${name}`}
+                        checked={isSelected}
+                        onCheckedChange={(v) => toggle(user.id, v === true)}
+                      />
+                    </TableCell>
+                    <TableCell className={`${TD} max-w-[24rem]`}>
+                      <div className="flex items-center gap-3">
+                        <UserAvatar user={user} />
+                        <div className="grid min-w-0 leading-tight">
+                          <span className="truncate font-medium">{name}</span>
+                          {user.email && user.email !== name && (
+                            <span className="truncate text-xs text-muted-foreground">{user.email}</span>
+                          )}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className={TD}>
+                      <UserStatusChip user={user} />
+                    </TableCell>
+                    <TableCell className={`${TD} text-right tabular-nums`}>
+                      {user.review_count.toLocaleString()}
+                    </TableCell>
+                    <TableCell className={`${TD} text-muted-foreground tabular-nums`}>
+                      {shortDate(user.created_at)}
+                    </TableCell>
+                    <TableCell className={`${TD} text-right`}>
+                      <UserActions user={user} />
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        }
+        list={users.map((user) => {
+          const name = getDisplayName(user)
+          return (
+            <li key={user.id} className="flex items-start gap-3 px-4 py-3">
+              <Checkbox
+                aria-label={`Select ${name}`}
+                checked={selected.has(user.id)}
+                onCheckedChange={(v) => toggle(user.id, v === true)}
+                className="mt-2"
+              />
+              <UserAvatar user={user} />
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="truncate text-sm font-medium">{name}</span>
+                  <UserStatusChip user={user} />
+                </div>
+                <p className="truncate text-xs text-muted-foreground tabular-nums">
+                  {[user.email !== name ? user.email : null, reviewCount(user.review_count), `Joined ${shortDate(user.created_at)}`]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              </div>
+              <UserActions user={user} />
+            </li>
+          )
+        })}
+        footer={
+          <TableFooter
+            page={page}
+            pageSize={pageSize}
+            shown={users.length}
+            total={total}
+            totalPages={totalPages}
+            onPage={(p) => url.set("page", p > 1 ? String(p) : "")}
+            noun="users"
+          />
+        }
+      />
 
-      {/* Section 4 — Pagination */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-muted-foreground text-sm tabular-nums">
-          {total === 0
-            ? "No users found"
-            : `Showing ${rangeStart}–${rangeEnd} of ${total}`}
-        </p>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => goToPage(page - 1)}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!hasMore}
-            onClick={() => goToPage(page + 1)}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
+      <AlertDialog open={confirmBulkSuspend} onOpenChange={(open) => !bulkPending && setConfirmBulkSuspend(open)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Suspend {toSuspend.length} {toSuspend.length === 1 ? "user" : "users"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              They’re locked out of the app and all their reviews are hidden until you unsuspend them.
+              {toUnsuspend.length > 0 &&
+                ` ${toUnsuspend.length} already suspended ${toUnsuspend.length === 1 ? "is" : "are"} left as is.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={bulkPending}
+              onClick={(e) => {
+                e.preventDefault()
+                bulkSuspend(true)
+              }}
+            >
+              {bulkPending ? "Suspending…" : toSuspend.length === 1 ? "Suspend user" : "Suspend users"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
