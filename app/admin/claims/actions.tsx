@@ -53,7 +53,7 @@ async function insertAuditLog(params: {
     action: params.action,
     target_type: "cafe_claim",
     target_id: params.targetId,
-    metadata: params.metadata ?? null,
+    metadata: params.metadata ?? {},
   });
 
   if (error) {

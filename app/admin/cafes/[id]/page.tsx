@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { notFound } from "next/navigation"
 import { getCafeById } from "@/lib/queries/cafes"
 
 export async function generateMetadata(
@@ -22,8 +23,10 @@ interface ViewCafePageProps {
 
 export default async function ViewCafePage({ params }: ViewCafePageProps) {
   const { id } = await params
-  const [cafe, tags, categories, invite, owners] = await Promise.all([
-    getCafeById(id),
+  const cafe = await getCafeById(id)
+  if (!cafe) notFound()
+
+  const [tags, categories, invite, owners] = await Promise.all([
     getAllTags(true),
     getCategoriesForCafe(id),
     getInviteForCafe(id),

@@ -230,17 +230,19 @@ export async function getReports(
     .from("review_reports")
     .select("id", { count: "exact", head: true })
 
-  let dataQuery = supabase
-    .from("review_reports")
-    .select(SELECT)
-    .order("created_at", { ascending: sort === "oldest" })
-    .range(from, to)
+  let dataQuery = supabase.from("review_reports").select(SELECT)
 
+  // cafe_az orders by the to-one cafes embed (PostgREST `cafes(name)`), with
+  // created_at as the tiebreaker; id keeps pages stable when both tie.
   if (sort === "cafe_az") {
     dataQuery = dataQuery
-      .order("name", { ascending: true, foreignTable: "cafes" })
+      .order("cafes(name)", { ascending: true })
       .order("created_at", { ascending: true })
+  } else {
+    dataQuery = dataQuery.order("created_at", { ascending: sort === "oldest" })
   }
+
+  dataQuery = dataQuery.order("id").range(from, to)
 
   // Status filter
   if (status === "active") {

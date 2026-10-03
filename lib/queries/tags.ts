@@ -120,7 +120,7 @@ export async function updateTag(
   id: string,
   payload: {
     name?: string
-    icon_name?: string
+    icon_name?: string | null
     sort_order?: number
     is_active?: boolean
   }

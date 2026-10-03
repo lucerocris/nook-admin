@@ -47,7 +47,7 @@ export async function toggleTagActiveAction(id: string, is_active: boolean) {
 
 export async function updateTagAction(
   id: string,
-  payload: { name?: string; icon_name?: string }
+  payload: { name?: string; icon_name?: string | null }
 ) {
   await requireSuperadmin()
 

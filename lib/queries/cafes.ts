@@ -243,6 +243,7 @@ export async function getCafesPage(filters?: CafeListFilters & {
       cafe_owner_cafe ( owner_id )
     `)
     .order(sort.column, { ascending: sort.ascending, nullsFirst: false })
+    .order("id")
     .range(from, to)
 
   countQuery = applyCafeListFilters(countQuery, filters)
@@ -291,8 +292,10 @@ export async function getCafeById(id: string) {
       )
     `)
     .eq("id", id)
-    .single()
+    .maybeSingle()
 
+  // 22P02 = malformed uuid in the URL; treat it as "not found" rather than a 500.
+  if (error?.code === "22P02") return null
   if (error) throw error
   return data
 }

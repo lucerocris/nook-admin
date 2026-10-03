@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation"
 import { getCafeById } from "@/lib/queries/cafes"
 import { getAllTags } from "@/lib/queries/tags"
 import { getCategoriesForCafe } from "@/lib/queries/menu"
@@ -9,8 +10,10 @@ interface EditCafePageProps {
 
 export default async function EditCafePage({ params }: EditCafePageProps) {
   const { id } = await params
-  const [cafe, tags, categories] = await Promise.all([
-    getCafeById(id),
+  const cafe = await getCafeById(id)
+  if (!cafe) notFound()
+
+  const [tags, categories] = await Promise.all([
     getAllTags(true),
     getCategoriesForCafe(id),
   ])
