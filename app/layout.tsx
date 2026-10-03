@@ -1,20 +1,17 @@
 import type { Metadata } from "next";
-import { Inter, Inter_Tight, JetBrains_Mono } from "next/font/google";
+import { Poppins, JetBrains_Mono } from "next/font/google";
 import "./globals.css"
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 
-const inter = Inter({
+// Same face and weights as the business portal, so both Nook portals read as
+// one product.
+const poppins = Poppins({
   variable: "--font-sans",
   subsets: ["latin"],
-});
-
-const interTight = Inter_Tight({
-  variable: "--font-display",
-  subsets: ["latin"],
-  weight: ["600"],
+  weight: ["400", "500", "600"],
 });
 
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
@@ -38,17 +35,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning className={cn("font-sans", inter.variable, interTight.variable, jetbrainsMono.variable)}>
+    <html lang="en" suppressHydrationWarning className={cn("font-sans", poppins.variable, jetbrainsMono.variable)}>
       <body className="antialiased">
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <TooltipProvider>
             {children}
-            <Toaster richColors />
+            <Toaster position="top-center" richColors closeButton />
           </TooltipProvider>
         </ThemeProvider>
       </body>

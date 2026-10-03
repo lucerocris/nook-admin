@@ -1,13 +1,7 @@
 import type { Metadata } from "next"
-import { AdminSidebar } from "@/components/admin/sidebar"
+import { AdminShell } from "@/components/admin/shell"
 import { getAdminDashboardSummary } from "@/lib/queries/dashboard"
-import { ThemeToggle } from "@/components/theme-toggle"
-import { Separator } from "@/components/ui/separator"
-import {
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@/components/ui/sidebar"
+import { createClient } from "@/lib/supabase/server"
 
 export const metadata: Metadata = {
   title: {
@@ -24,30 +18,22 @@ export default async function AdminLayout({
   // Both sidebar badges come from the one request-cached summary. This used to
   // be a claims count plus getReportsMetrics()' three counts, on every admin
   // page, with the dashboard page then repeating the latter three.
-  const summary = await getAdminDashboardSummary()
-
-  const pendingClaimsCount = summary.claims.by_status.pending ?? 0
-  const pendingReportsCount = summary.reports.by_status.pending ?? 0
+  const supabase = await createClient()
+  const [summary, { data: { user } }] = await Promise.all([
+    getAdminDashboardSummary(),
+    supabase.auth.getUser(),
+  ])
 
   return (
-    <SidebarProvider>
-      <AdminSidebar
-        pendingClaimsCount={pendingClaimsCount}
-        pendingReportsCount={pendingReportsCount}
-      />
-      <SidebarInset>
-        <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
-          <SidebarTrigger className="-ml-1" />
-          <Separator
-            orientation="vertical"
-            className="mr-2 data-vertical:h-4 data-vertical:self-auto"
-          />
-          <ThemeToggle className="ml-auto" />
-        </header>
-        <main className="flex flex-1 flex-col gap-4 p-4">
-          {children}
-        </main>
-      </SidebarInset>
-    </SidebarProvider>
+    <AdminShell
+      pendingClaimsCount={summary.claims.by_status.pending ?? 0}
+      pendingReportsCount={summary.reports.by_status.pending ?? 0}
+      account={{
+        name: (user?.user_metadata?.full_name as string | undefined) ?? null,
+        email: user?.email ?? null,
+      }}
+    >
+      {children}
+    </AdminShell>
   )
 }
