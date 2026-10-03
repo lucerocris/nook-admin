@@ -295,7 +295,7 @@ export function TagsClient({ tags }: { tags: Tag[] }) {
     startTransition(async () => {
       const result = await updateTagAction(editingTag.id, {
         name: editName.trim(),
-        icon_name: editIconName || undefined,
+        icon_name: editIconName || null,
       })
 
       if (result.success) {
