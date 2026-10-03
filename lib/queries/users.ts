@@ -78,6 +78,28 @@ export async function getUsers({
   }
 }
 
+// Tab counts for the Users page. Asked of the same RPC as the table (limit 1,
+// only `total` is read) so a count always matches what its tab lists: app
+// users only, staff accounts excluded. Unaffected by search, like the tabs.
+export async function getUserStatusCounts() {
+  const supabase = createAdminClient()
+  const count = async (status: "active" | "suspended") => {
+    const { data, error } = await supabase.rpc("get_admin_users_page", {
+      p_q: null,
+      p_limit: 1,
+      p_offset: 0,
+      p_status: status,
+      p_sort: "recent",
+    })
+    if (error) throw error
+    return (data as UsersPageRpc).total
+  }
+  const [active, suspended] = await Promise.all([count("active"), count("suspended")])
+  return { all: active + suspended, active, suspended }
+}
+
+export type UserStatusCounts = Awaited<ReturnType<typeof getUserStatusCounts>>
+
 export async function suspendUser(userId: string, suspend: boolean) {
   const supabase = createAdminClient()
   const { error } = await supabase

@@ -74,6 +74,19 @@ import {
 } from "@/components/ui/tooltip"
 
 import type { Cafe } from "@/lib/queries/cafes"
+import {
+  countChanges,
+  Field,
+  FormLayout,
+  FormPageHeader,
+  FormSection,
+  RailPanel,
+  SaveBar,
+  SectionIndex,
+  useLeaveGuard,
+  type SectionIndexItem,
+} from "@/components/admin/form-kit"
+import { StatusChip, type Tone } from "@/components/admin/table-kit"
 import type { Tag } from "@/lib/queries/tags"
 import type { Category, MenuItem } from "@/lib/queries/menu"
 import {
@@ -94,7 +107,6 @@ import {
   deleteMenuItemImageAction,
 } from "@/app/actions/upload"
 import imageCompression from "browser-image-compression"
-import { PageTitle } from "@/components/admin/page-header"
 
 async function compressImage(file: File): Promise<File> {
   return imageCompression(file, {
@@ -1080,6 +1092,7 @@ function MenuCategoriesCard({
   onCategoryUpdated,
   onDeleteCategory,
   disabled = false,
+  headerAction,
 }: {
   categories: LocalMenuCategory[]
   items: LocalMenuItem[]
@@ -1089,6 +1102,7 @@ function MenuCategoriesCard({
   onCategoryUpdated: (cat: LocalMenuCategory) => void
   onDeleteCategory: (id: string) => Promise<void>
   disabled?: boolean
+  headerAction?: React.ReactNode
 }) {
   const [addCategoryOpen, setAddCategoryOpen] = React.useState(false)
   const [editCategory, setEditCategory] = React.useState<LocalMenuCategory | null>(null)
@@ -1107,14 +1121,12 @@ function MenuCategoriesCard({
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle>Menu Categories</CardTitle>
-          <CardDescription>
-            Organize menu items into categories
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      <FormSection
+        id="menu-categories"
+        title="Menu categories"
+        description="Group menu items. Nook’s shared categories can’t be renamed."
+        action={headerAction}
+      >
           {visibleCategories.map((cat) => (
             <div
               key={cat.id}
@@ -1165,8 +1177,7 @@ function MenuCategoriesCard({
               Add Category
             </Button>
           </div>
-        </CardContent>
-      </Card>
+      </FormSection>
 
       <AddCategoryDialog
         open={addCategoryOpen}
@@ -1315,15 +1326,11 @@ function MenuItemsCard({
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle>Menu Items</CardTitle>
-          <CardDescription>
-            Add all items. Toggle highlights to feature them on the cafe detail
-            page.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      <FormSection
+        id="menu-items"
+        title="Menu items"
+        description="Everything on the menu. Highlights show with a photo on the café page."
+      >
           <Tabs defaultValue="all">
             <TabsList className="mb-4">
               <TabsTrigger value="all">All Items</TabsTrigger>
@@ -1438,8 +1445,7 @@ function MenuItemsCard({
           {uploadError && (
             <p className="text-sm text-destructive mt-3">{uploadError}</p>
           )}
-        </CardContent>
-      </Card>
+      </FormSection>
 
       <AddItemDialog
         open={addItemOpen}
@@ -1868,9 +1874,8 @@ export function CafeEditorForm({
   )
   const [flagNew, setFlagNew] = React.useState(cafe?.is_new ?? false)
   const [flagFeatured, setFlagFeatured] = React.useState(cafe?.is_featured ?? false)
-  const [flagActive, setFlagActive] = React.useState(
-    cafe ? cafe.status === "active" : true
-  )
+  // The old "Active" switch here was never sent with the save; the listing's
+  // visibility is its status, set in the rail or by Publish.
 
   // --- Save ---
   const [saving, setSaving] = React.useState(false)
@@ -1946,7 +1951,51 @@ export function CafeEditorForm({
     }
   }
 
-  async function handleSave() {
+  // --- Unsaved changes ---
+  // Everything handleSave sends, keyed by the section it lives in, so the save
+  // bar can count changes and the section index can dot the sections that
+  // have them.
+  function snapshot(statusOverride?: "draft" | "active" | "inactive") {
+    return {
+      basics: { name, neighborhood, city, description },
+      location: { addressInput, lat, lng },
+      hours,
+      tags: { selected: Array.from(selectedTags).sort(), featured: Array.from(featuredTags).sort() },
+      menu: menuItems.map((i) => [i.id, i.name, i.description, i.price, i.categoryId, i.isHighlight]),
+      social: { instagram, facebook, tiktok, website },
+      status: { status: statusOverride ?? listingStatus, flagNew, flagFeatured },
+    }
+  }
+  const [baseline, setBaseline] = React.useState(() => snapshot())
+  const current = snapshot()
+  const dirtyCount = disabled ? 0 : countChanges(baseline, current)
+  const isDirty = (key: keyof typeof current) =>
+    JSON.stringify(baseline[key]) !== JSON.stringify(current[key])
+  const allowLeave = useLeaveGuard(dirtyCount > 0 && !saving)
+
+  // Required-field errors show once a save has been tried, not while typing
+  // a brand-new listing.
+  const [triedSave, setTriedSave] = React.useState(false)
+  const fieldError = (value: string, label: string) =>
+    triedSave && value.trim().length === 0 ? `${label} is required` : null
+  const basicsErrors = [fieldError(name, "Café name"), fieldError(neighborhood, "Neighborhood"), fieldError(city, "City")].filter(Boolean)
+  const locationError = fieldError(addressInput, "Address")
+  const errorCount = basicsErrors.length + (locationError ? 1 : 0)
+
+  function focusFirstError() {
+    const id = basicsErrors.length > 0 ? "basics" : "location"
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
+
+  const [discardOpen, setDiscardOpen] = React.useState(false)
+  function discardChanges() {
+    // Reloading is the one reset that can't miss a field.
+    allowLeave()
+    window.location.reload()
+  }
+
+  async function handleSave(nextStatus?: "draft" | "active" | "inactive") {
+    setTriedSave(true)
     if (hasMissingRequiredFields) {
       setSaveError({
         title: "Required fields missing",
@@ -1969,7 +2018,7 @@ export function CafeEditorForm({
         lng,
         operating_hours: hours,
         social_links: { instagram, facebook, tiktok, website },
-        status: listingStatus,
+        status: nextStatus ?? listingStatus,
         is_new: flagNew,
         is_featured: flagFeatured,
         tagIds: Array.from(selectedTags),
@@ -1987,7 +2036,7 @@ export function CafeEditorForm({
             image_url: item.imageUrl,
           })),
         })
-        toast.success("Cafe created")
+        toast.success(`${name} created`)
       } else {
         await updateCafeAction(cafe!.id, {
           ...payload,
@@ -2001,8 +2050,13 @@ export function CafeEditorForm({
             image_url: item.imageUrl,
           })),
         })
-        toast.success("Cafe updated")
+        toast.success(
+          nextStatus === "active" && listingStatus !== "active" ? `${name} is live` : "Changes saved"
+        )
       }
+      if (nextStatus) setListingStatus(nextStatus)
+      // What's on screen is now what's stored: reset the unsaved-changes baseline.
+      setBaseline(snapshot(nextStatus))
     } catch (err: unknown) {
       const parsedError = parseSaveError(err)
       toast.error(parsedError.message)
@@ -2016,783 +2070,606 @@ export function CafeEditorForm({
   // Render
   // ---------------------------------------------------------------------------
 
-  return (
-    <TooltipProvider>
-      <div className="max-w-6xl mx-auto px-6 py-6">
-        {/* Page header — hidden in disabled/view mode (the page provides its own) */}
-        {!disabled && (
-          <div className="flex items-center gap-4 mb-8">
-            <Button variant="ghost" size="icon" asChild>
-              <Link href="/admin/cafes">
-                <ArrowLeft />
-              </Link>
-            </Button>
-            <PageTitle
-              size="sm"
-              eyebrow="Listings"
-              title={mode === "create" ? "Add Cafe" : "Edit Cafe"}
-              lead={
-                mode === "create"
-                  ? "Fill in the details below"
-                  : "Update the cafe details"
-              }
+  const STATUS_META: Record<"draft" | "active" | "inactive", { label: string; tone: Tone }> = {
+    draft: { label: "Draft", tone: "warning" },
+    active: { label: "Active", tone: "success" },
+    inactive: { label: "Inactive", tone: "danger" },
+  }
+  const statusMeta = STATUS_META[listingStatus as "draft" | "active" | "inactive"] ?? STATUS_META.draft
+
+  const sections: SectionIndexItem[] = [
+    { id: "basics", label: "Basic info", error: basicsErrors.length > 0, dirty: isDirty("basics") },
+    { id: "location", label: "Location", error: !!locationError, dirty: isDirty("location") },
+    { id: "hours", label: "Hours", dirty: isDirty("hours") },
+    { id: "photos", label: "Photos" },
+    { id: "tags", label: "Tags", dirty: isDirty("tags") },
+    { id: "menu-categories", label: "Menu categories" },
+    { id: "menu-items", label: "Menu items", dirty: isDirty("menu") },
+    { id: "social", label: "Social links", dirty: isDirty("social") },
+  ]
+
+  const tagPill = (selected: boolean) =>
+    selected
+      ? "border-foreground bg-foreground text-background hover:bg-foreground/90 hover:text-background"
+      : ""
+
+  const main = (
+    <>
+      {saveError && !disabled && (
+        <div role="alert" className="mb-6 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
+          <p className="text-sm font-medium text-destructive">{saveError.title}</p>
+          <p className="mt-0.5 text-[13px] text-destructive/90">{saveError.message}</p>
+          {saveError.details.length > 0 && (
+            <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-xs text-destructive/80">
+              {saveError.details.map((detail) => (
+                <li key={detail}>{detail}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <FormSection id="basics" title="Basic info" description="What people see first on the listing.">
+        <Field label="Café name" htmlFor="cafe-name" error={fieldError(name, "Café name")}>
+          <Input
+            id="cafe-name"
+            placeholder="e.g. Slowpoke Coffee"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={disabled}
+            aria-invalid={!!fieldError(name, "Café name") || undefined}
+            className="text-base sm:text-sm"
+          />
+        </Field>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Neighborhood" htmlFor="cafe-neighborhood" error={fieldError(neighborhood, "Neighborhood")}>
+            <Input
+              id="cafe-neighborhood"
+              placeholder="e.g. IT Park"
+              value={neighborhood}
+              onChange={(e) => setNeighborhood(e.target.value)}
+              disabled={disabled}
+              aria-invalid={!!fieldError(neighborhood, "Neighborhood") || undefined}
+              className="text-base sm:text-sm"
             />
+          </Field>
+          <Field label="City" htmlFor="cafe-city" error={fieldError(city, "City")}>
+            <Input
+              id="cafe-city"
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              disabled={disabled}
+              aria-invalid={!!fieldError(city, "City") || undefined}
+              className="text-base sm:text-sm"
+            />
+          </Field>
+        </div>
+        <Field label="Description" htmlFor="cafe-description" optional hint="A few lines on what it serves and what it’s like to stay.">
+          <Textarea
+            id="cafe-description"
+            placeholder="A short description of the café…"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="resize-none text-base sm:text-sm"
+            rows={4}
+            disabled={disabled}
+          />
+        </Field>
+      </FormSection>
+
+      <FormSection id="location" title="Location" description="Search an address, type it, or drag the pin. Coordinates can be typed exactly.">
+        <Field label="Search address" hint={process.env.NEXT_PUBLIC_MAPBOX_TOKEN ? "Picking a result fills the address and moves the pin." : undefined}>
+          <div className={disabled ? "pointer-events-none opacity-50" : undefined}>
+            {process.env.NEXT_PUBLIC_MAPBOX_TOKEN ? (
+              <SearchBox
+                accessToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN}
+                value={addressInput}
+                onChange={(value) => {
+                  setAddressInput(value)
+                }}
+                onRetrieve={(res) => {
+                  const feature = res.features[0]
+                  if (!feature) return
+
+                  const [retrievedLng, retrievedLat] = feature.geometry.coordinates
+
+                  setAddressInput(feature.properties.full_address ?? feature.properties.name ?? "")
+                  syncCoordinates(retrievedLat, retrievedLng)
+                }}
+                options={{
+                  country: "PH",
+                  language: "en",
+                  limit: 5,
+                  types: new Set(["place", "locality", "neighborhood", "address", "street"] as const),
+                }}
+                placeholder="Search for an address or place…"
+                theme={{
+                  variables: {
+                    borderRadius: "var(--radius)",
+                    fontFamily: "var(--font-sans)",
+                    colorBackground: "var(--background)",
+                    colorBackgroundHover: "var(--muted)",
+                    colorText: "var(--foreground)",
+                    colorSecondary: "var(--muted-foreground)",
+                    boxShadow: "var(--shadow-sm)",
+                  },
+                }}
+              />
+            ) : (
+              <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+                Address search is off — set <code className="font-mono">NEXT_PUBLIC_MAPBOX_TOKEN</code> to turn it on.
+                Use the address and coordinate fields below.
+              </p>
+            )}
           </div>
-        )}
+        </Field>
 
-        {/* Two-column layout */}
-        <div className="flex flex-col lg:flex-row gap-6 items-start">
-          {/* ----------------------------------------------------------------
-              Left column — form
-          ---------------------------------------------------------------- */}
-          <div className="flex-1 min-w-0 flex flex-col gap-4">
+        <Field label="Address" htmlFor="cafe-address" error={locationError} hint="The street address shown on the listing.">
+          <Input
+            id="cafe-address"
+            placeholder="Type the exact street address"
+            value={addressInput}
+            onChange={(e) => setAddressInput(e.target.value)}
+            disabled={disabled}
+            aria-invalid={!!locationError || undefined}
+            className="text-base sm:text-sm"
+          />
+        </Field>
 
-            {/* CARD 1 — Basic Info */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Basic Info</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4">
-                <FieldGroup label="Cafe name">
+        <div className="overflow-hidden rounded-xl border">
+          <MapPicker lat={lat} lng={lng} onChange={handleMapChange} disabled={disabled} />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Latitude" htmlFor="cafe-lat">
+            <Input
+              id="cafe-lat"
+              type="number"
+              inputMode="decimal"
+              step="0.000001"
+              min="-90"
+              max="90"
+              value={latInput}
+              onChange={(e) => handleLatInputChange(e.target.value)}
+              onBlur={commitLatInput}
+              disabled={disabled}
+              className="font-mono text-base sm:text-sm"
+            />
+          </Field>
+          <Field label="Longitude" htmlFor="cafe-lng">
+            <Input
+              id="cafe-lng"
+              type="number"
+              inputMode="decimal"
+              step="0.000001"
+              min="-180"
+              max="180"
+              value={lngInput}
+              onChange={(e) => handleLngInputChange(e.target.value)}
+              onBlur={commitLngInput}
+              disabled={disabled}
+              className="font-mono text-base sm:text-sm"
+            />
+          </Field>
+        </div>
+      </FormSection>
+
+      <FormSection id="hours" title="Hours" description="Opening and closing times, 24-hour. Turn on Closed for days off.">
+        <ul className="divide-y rounded-xl border">
+          {DAYS.map(({ key, label }) => {
+            const dayHours = hours[key]
+            const isClosed = dayHours?.closed ?? false
+            return (
+              <li key={key} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5">
+                <span className="w-24 shrink-0 text-sm font-medium">{label}</span>
+                <div className="flex items-center gap-2">
                   <Input
-                    placeholder="e.g. Slowpoke Coffee"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    disabled={disabled}
+                    aria-label={`${label} opens`}
+                    className="w-24 text-base tabular-nums sm:text-sm"
+                    placeholder="08:00"
+                    value={dayHours?.open ?? ""}
+                    onChange={(e) =>
+                      setHours((prev) => ({ ...prev, [key]: { ...prev[key], open: e.target.value } }))
+                    }
+                    disabled={isClosed || disabled}
                   />
-                </FieldGroup>
-                <FieldGroup label="Neighborhood">
+                  <span aria-hidden className="text-muted-foreground">–</span>
                   <Input
-                    placeholder="e.g. IT Park"
-                    value={neighborhood}
-                    onChange={(e) => setNeighborhood(e.target.value)}
-                    disabled={disabled}
+                    aria-label={`${label} closes`}
+                    className="w-24 text-base tabular-nums sm:text-sm"
+                    placeholder="22:00"
+                    value={dayHours?.close ?? ""}
+                    onChange={(e) =>
+                      setHours((prev) => ({ ...prev, [key]: { ...prev[key], close: e.target.value } }))
+                    }
+                    disabled={isClosed || disabled}
                   />
-                </FieldGroup>
-                <FieldGroup label="City">
-                  <Input
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    disabled={disabled}
-                  />
-                </FieldGroup>
-                <FieldGroup label="Description">
-                  <Textarea
-                    placeholder="A short description of the cafe..."
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    className="resize-none"
-                    rows={4}
-                    disabled={disabled}
-                  />
-                </FieldGroup>
-              </CardContent>
-            </Card>
-
-            {/* CARD 2 — Location */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Location</CardTitle>
-                <CardDescription>
-                  Drop a pin to set the exact location
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium leading-none">
-                    Search Address (Mapbox)
-                  </label>
-                  <div className={disabled ? "pointer-events-none opacity-50" : undefined}>
-                    {process.env.NEXT_PUBLIC_MAPBOX_TOKEN ? (
-                    <SearchBox
-                      accessToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN}
-                      value={addressInput}
-                      onChange={(value) => {
-                        setAddressInput(value)
-                      }}
-                      onRetrieve={(res) => {
-                        const feature = res.features[0]
-                        if (!feature) return
-
-                        const [retrievedLng, retrievedLat] =
-                          feature.geometry.coordinates
-
-                        setAddressInput(
-                          feature.properties.full_address ??
-                          feature.properties.name ??
-                          ""
-                        )
-                        syncCoordinates(retrievedLat, retrievedLng)
-                      }}
-                      options={{
-                        country: "PH",
-                        language: "en",
-                        limit: 5,
-                        types: new Set([
-                          "place",
-                          "locality",
-                          "neighborhood",
-                          "address",
-                          "street",
-                        ] as const),
-                      }}
-                      placeholder="Search for an address or place..."
-                      theme={{
-                        variables: {
-                          borderRadius: "var(--radius)",
-                          fontFamily: "var(--font-sans)",
-                          colorBackground: "var(--background)",
-                          colorBackgroundHover: "var(--muted)",
-                          colorText: "var(--foreground)",
-                          colorSecondary: "var(--muted-foreground)",
-                          boxShadow: "var(--shadow-sm)",
-                        },
-                      }}
-                    />
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        Address search is disabled — set{" "}
-                        <code>NEXT_PUBLIC_MAPBOX_TOKEN</code> to enable it. Use
-                        the manual address and coordinate fields below.
-                      </p>
-                    )}
-                  </div>
                 </div>
-
-                <FieldGroup label="Manual address">
-                  <Input
-                    placeholder="Type exact street address"
-                    value={addressInput}
-                    onChange={(e) => setAddressInput(e.target.value)}
+                <label htmlFor={`closed-${key}`} className="ml-auto flex cursor-pointer items-center gap-2 text-[13px] text-muted-foreground select-none">
+                  Closed
+                  <Switch
+                    id={`closed-${key}`}
+                    checked={isClosed}
+                    onCheckedChange={(val) =>
+                      setHours((prev) => ({ ...prev, [key]: { ...prev[key], closed: val } }))
+                    }
                     disabled={disabled}
                   />
-                </FieldGroup>
+                </label>
+              </li>
+            )
+          })}
+        </ul>
+      </FormSection>
 
-                <MapPicker
-                  lat={lat}
-                  lng={lng}
-                  onChange={handleMapChange}
-                  disabled={disabled}
-                />
+      <FormSection
+        id="photos"
+        title="Photos"
+        description={
+          <>
+            Up to 5. The hero is the cover on the listing; drag or use the arrows to reorder. Photos save as soon as
+            they’re added.
+            {!cafe?.id && (
+              <span className="mt-1 block font-medium text-[#8A5A00]">Save the café first to add photos.</span>
+            )}
+          </>
+        }
+      >
+        <input
+          ref={photoInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="sr-only"
+          tabIndex={-1}
+          onChange={handlePhotoFileSelect}
+        />
 
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                  <div className="flex flex-col gap-1">
-                    <p className="text-xs text-muted-foreground">Latitude</p>
-                    <Input
-                      type="number"
-                      step="0.000001"
-                      min="-90"
-                      max="90"
-                      value={latInput}
-                      onChange={(e) => handleLatInputChange(e.target.value)}
-                      onBlur={commitLatInput}
-                      disabled={disabled}
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <p className="text-xs text-muted-foreground">Longitude</p>
-                    <Input
-                      type="number"
-                      step="0.000001"
-                      min="-180"
-                      max="180"
-                      value={lngInput}
-                      onChange={(e) => handleLngInputChange(e.target.value)}
-                      onBlur={commitLngInput}
-                      disabled={disabled}
-                    />
-                  </div>
-                </div>
-
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Use search, manual address, or drag the map pin. You can also
-                  type exact coordinates directly.
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* CARD 3 — Operating Hours */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Operating Hours</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {DAYS.map(({ key, label }) => {
-                  const dayHours = hours[key]
-                  const isClosed = dayHours?.closed ?? false
-                  return (
-                    <div
-                      key={key}
-                      className="flex items-center gap-4 py-2 border-b last:border-0"
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
+          {allPhotos.map((url, index) => (
+            <div
+              key={url}
+              className="group relative aspect-square overflow-hidden rounded-lg bg-muted"
+              draggable={!disabled && !isUploadingPhoto && !isReordering}
+              onDragStart={() => handleDragStart(index)}
+              onDragEnd={handleDragEnd}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => void handleDrop(index)}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={url} alt={`Photo ${index + 1}`} className="size-full object-cover" />
+              {url === heroUrl && (
+                <span className="absolute top-1.5 left-1.5 rounded-full bg-foreground px-2 py-0.5 text-[11px] font-medium text-background">
+                  Hero
+                </span>
+              )}
+              {!disabled && (
+                <>
+                  {/* Always visible: hover-only controls would be unreachable on touch. */}
+                  <div className="absolute inset-x-1.5 bottom-1.5 flex items-center justify-between gap-1">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon-sm"
+                      className="bg-background/90"
+                      onClick={() => void movePhoto(index, -1)}
+                      disabled={index === 0 || isUploadingPhoto || isReordering}
+                      aria-label="Move photo left"
                     >
-                      <span className="w-24 text-sm font-medium shrink-0">
-                        {label}
-                      </span>
-                      <Input
-                        className="w-32"
-                        placeholder="08:00"
-                        value={dayHours?.open ?? ""}
-                        onChange={(e) =>
-                          setHours((prev) => ({
-                            ...prev,
-                            [key]: { ...prev[key], open: e.target.value },
-                          }))
-                        }
-                        disabled={isClosed || disabled}
-                      />
-                      <Input
-                        className="w-32"
-                        placeholder="22:00"
-                        value={dayHours?.close ?? ""}
-                        onChange={(e) =>
-                          setHours((prev) => ({
-                            ...prev,
-                            [key]: { ...prev[key], close: e.target.value },
-                          }))
-                        }
-                        disabled={isClosed || disabled}
-                      />
-                      <div className="flex items-center gap-2 ml-auto">
-                        <label
-                          htmlFor={`closed-${key}`}
-                          className="text-xs text-muted-foreground cursor-pointer select-none"
+                      <CaretLeft />
+                    </Button>
+                    <div className="flex gap-1">
+                      {url !== heroUrl && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="icon-sm"
+                          className="bg-background/90"
+                          disabled={isUploadingPhoto || isReordering}
+                          onClick={() => void setAsHero(url)}
+                          aria-label="Make this the hero photo"
+                          title="Make hero"
                         >
-                          Closed
-                        </label>
-                        <Switch
-                          id={`closed-${key}`}
-                          checked={isClosed}
-                          onCheckedChange={(val) =>
-                            setHours((prev) => ({
-                              ...prev,
-                              [key]: { ...prev[key], closed: val },
-                            }))
-                          }
-                          disabled={disabled}
-                        />
-                      </div>
+                          <Crown />
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="icon-sm"
+                        className="bg-background/90 hover:text-destructive"
+                        disabled={isUploadingPhoto || isReordering}
+                        onClick={() => handlePhotoDelete(url)}
+                        aria-label="Delete photo"
+                        title="Delete"
+                      >
+                        <Trash />
+                      </Button>
                     </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon-sm"
+                      className="bg-background/90"
+                      onClick={() => void movePhoto(index, 1)}
+                      disabled={index === allPhotos.length - 1 || isUploadingPhoto || isReordering}
+                      aria-label="Move photo right"
+                    >
+                      <CaretRight />
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+
+          {allPhotos.length < 5 && !disabled && (
+            <button
+              type="button"
+              className="flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-dashed text-[13px] text-muted-foreground outline-hidden transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60"
+              disabled={!cafe?.id || isUploadingPhoto}
+              onClick={() => photoInputRef.current?.click()}
+            >
+              <Plus className="size-5" aria-hidden />
+              {isUploadingPhoto ? "Uploading…" : "Add photo"}
+            </button>
+          )}
+        </div>
+
+        {photoUploadError && <p className="text-sm text-destructive">{photoUploadError}</p>}
+      </FormSection>
+
+      <FormSection id="tags" title="Tags" description="Pick every tag that fits. Featured tags show on the café card.">
+        {Array.from(tagGroups.entries()).map(([category, categoryTags]) => (
+          <div key={category} className="flex flex-col gap-2">
+            <p className="text-[13px] font-medium">
+              {formatCategoryLabel(category)}
+              {category === "vibe" && <span className="ml-1.5 font-normal text-muted-foreground">Hidden in the app</span>}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {categoryTags.map((tag) => {
+                const selected = selectedTags.has(tag.id)
+                return (
+                  <Button
+                    key={tag.id}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    aria-pressed={selected}
+                    onClick={() => toggleTag(tag.id)}
+                    disabled={disabled}
+                    className={`rounded-full ${tagPill(selected)}`}
+                  >
+                    {tag.name}
+                  </Button>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+
+        <div className="flex flex-col gap-2 border-t pt-4">
+          <p className="text-[13px] font-medium">
+            Featured tags
+            <span className="ml-1.5 font-normal text-muted-foreground">Shown on the café card</span>
+          </p>
+          {tags.filter((tag) => selectedTags.has(tag.id)).length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {tags
+                .filter((tag) => selectedTags.has(tag.id))
+                .map((tag) => {
+                  const isFeatured = featuredTags.has(tag.id)
+                  return (
+                    <Button
+                      key={tag.id}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      aria-pressed={isFeatured}
+                      onClick={() => toggleFeaturedTag(tag.id)}
+                      disabled={disabled}
+                      className={`rounded-full ${tagPill(isFeatured)}`}
+                    >
+                      {tag.name}
+                    </Button>
                   )
                 })}
-              </CardContent>
-            </Card>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">Pick at least one tag above first.</p>
+          )}
+        </div>
+      </FormSection>
 
-            {/* CARD 4 — Photos */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Photos</CardTitle>
-                <CardDescription>
-                  Upload up to 5 photos. First photo is the hero.
-                  {!cafe?.id && (
-                    <span className="ml-1 text-amber-600 dark:text-amber-400">
-                      Save the cafe first to enable photo uploads.
-                    </span>
-                  )}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <input
-                  ref={photoInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  onChange={handlePhotoFileSelect}
-                />
+      <MenuCategoriesCard
+        categories={menuCategories}
+        items={menuItems}
+        showGlobalCategories={showGlobalMenuCategories}
+        cafeId={cafe?.id}
+        onCategoryAdded={(cat) => setMenuCategories((prev) => [...prev, cat])}
+        onCategoryUpdated={(updated) =>
+          setMenuCategories((prev) => prev.map((cat) => (cat.id === updated.id ? updated : cat)))
+        }
+        onDeleteCategory={handleDeleteCategory}
+        disabled={disabled}
+        headerAction={
+          <label className="flex shrink-0 cursor-pointer items-center gap-2 text-[13px] text-muted-foreground select-none">
+            Show empty Nook categories
+            <Switch
+              checked={showGlobalMenuCategories}
+              onCheckedChange={setShowGlobalMenuCategories}
+              disabled={disabled}
+            />
+          </label>
+        }
+      />
+      <MenuItemsCard
+        items={menuItems}
+        categories={menuCategories}
+        showGlobalCategories={showGlobalMenuCategories}
+        cafeId={cafe?.id}
+        onToggleHighlight={handleToggleHighlight}
+        onDeleteItem={handleDeleteItem}
+        onItemAdded={handleItemAdded}
+        onItemUpdated={handleItemUpdated}
+        onImageUploaded={handleImageUploaded}
+        onImageDeleted={handleImageDeleted}
+        disabled={disabled}
+      />
 
-                <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
-                  {/* Upload button */}
-                  {allPhotos.length < 5 && (
-                    <div
-                      className={`aspect-square rounded-lg border-2 border-dashed border-border flex flex-col items-center justify-center gap-1 transition-colors text-muted-foreground ${
-                        disabled || !cafe?.id || isUploadingPhoto
-                          ? "pointer-events-none opacity-60"
-                          : "cursor-pointer hover:bg-muted"
-                      }`}
-                      onClick={() =>
-                        !disabled && cafe?.id && !isUploadingPhoto
-                          ? photoInputRef.current?.click()
-                          : undefined
-                      }
-                    >
-                      <Plus className="size-6" />
-                      <span className="text-xs">
-                        {isUploadingPhoto ? "Uploading..." : "Add photo"}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Actual photos */}
-                  {allPhotos.map((url, index) => (
-                    <div
-                      key={url}
-                      className="relative group aspect-square rounded-lg bg-muted overflow-hidden"
-                      draggable={!disabled && !isUploadingPhoto && !isReordering}
-                      onDragStart={() => handleDragStart(index)}
-                      onDragEnd={handleDragEnd}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={() => void handleDrop(index)}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={url}
-                        alt="Cafe photo"
-                        className="w-full h-full object-cover"
-                      />
-                      {url === heroUrl && (
-                        <Badge className="absolute bottom-1 left-1 text-xs">
-                          Hero
-                        </Badge>
-                      )}
-                      <Badge
-                        variant="outline"
-                        className="absolute top-1 right-1 text-[10px] bg-background/90"
-                      >
-                        <DotsSixVertical size={10} />
-                        <span className="hidden sm:inline">Drag</span>
-                      </Badge>
-                      <div className="absolute bottom-1 left-1 right-1 z-10 flex items-center justify-between gap-2">
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="icon"
-                          className="size-7"
-                          onClick={() => void movePhoto(index, -1)}
-                          disabled={
-                            index === 0 ||
-                            isUploadingPhoto ||
-                            isReordering ||
-                            disabled
-                          }
-                          aria-label="Move photo left"
-                        >
-                          <CaretLeft size={14} />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="icon"
-                          className="size-7"
-                          onClick={() => void movePhoto(index, 1)}
-                          disabled={
-                            index === allPhotos.length - 1 ||
-                            isUploadingPhoto ||
-                            isReordering ||
-                            disabled
-                          }
-                          aria-label="Move photo right"
-                        >
-                          <CaretRight size={14} />
-                        </Button>
-                      </div>
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
-                        {url !== heroUrl && (
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            className="gap-1"
-                            disabled={isUploadingPhoto || isReordering || disabled}
-                            onClick={() => void setAsHero(url)}
-                          >
-                            <Crown size={12} />
-                            Set hero
-                          </Button>
-                        )}
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          className="gap-1"
-                          disabled={isUploadingPhoto || isReordering || disabled}
-                          onClick={() => handlePhotoDelete(url)}
-                        >
-                          <Trash size={12} />
-                          Delete
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {photoUploadError && (
-                  <p className="text-sm text-destructive mt-3">
-                    {photoUploadError}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* CARD 5 — Tags */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Tags</CardTitle>
-                <CardDescription>
-                  Select all tags that apply to this cafe
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-1">
-                {Array.from(tagGroups.entries()).map(([category, categoryTags]) => (
-                  <div key={category}>
-                    <div className="flex items-center gap-2">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 mt-4 first:mt-0">
-                        {formatCategoryLabel(category)}
-                      </p>
-                      {category === "vibe" && (
-                        <p className="text-xs text-muted-foreground mb-2 mt-4">
-                          (hidden in app)
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {categoryTags.map((tag) => {
-                        const selected = selectedTags.has(tag.id)
-                        return (
-                          <Button
-                            key={tag.id}
-                            variant="outline"
-                            size="sm"
-                            onClick={() => toggleTag(tag.id)}
-                            disabled={disabled}
-                            className={
-                              selected
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : ""
-                            }
-                          >
-                            {tag.name}
-                          </Button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ))}
-
-                <div className="flex flex-col gap-2 mt-6">
-                  <FieldLabel>Featured tags (shown on cafe cards)</FieldLabel>
-                  <p className="text-xs text-muted-foreground">
-                    Choose one or more featured tags from your selected tags.
-                  </p>
-                  {tags.filter((tag) => selectedTags.has(tag.id)).length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {tags
-                        .filter((tag) => selectedTags.has(tag.id))
-                        .map((tag) => {
-                          const isFeatured = featuredTags.has(tag.id)
-                          return (
-                            <Button
-                              key={tag.id}
-                              variant="outline"
-                              size="sm"
-                              onClick={() => toggleFeaturedTag(tag.id)}
-                              disabled={disabled}
-                              className={
-                                isFeatured
-                                  ? "bg-primary text-primary-foreground border-primary"
-                                  : ""
-                              }
-                            >
-                              {tag.name}
-                            </Button>
-                          )
-                        })}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Select at least one tag first.
-                    </p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* CARDS 6A + 6B — Menu Categories + Menu Items */}
-            <div className="flex items-center justify-between rounded-lg border px-4 py-3">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium">Show global menu categories</span>
-                <span className="text-xs text-muted-foreground">
-                  Hide global categories that do not have items yet
-                </span>
-              </div>
-              <Switch
-                checked={showGlobalMenuCategories}
-                onCheckedChange={setShowGlobalMenuCategories}
+      <FormSection id="social" title="Social links" description="Full links, including https://.">
+        {(
+          [
+            { id: "instagram", label: "Instagram", icon: InstagramLogo, value: instagram, set: setInstagram, placeholder: "https://instagram.com/…" },
+            { id: "facebook", label: "Facebook", icon: FacebookLogo, value: facebook, set: setFacebook, placeholder: "https://facebook.com/…" },
+            { id: "tiktok", label: "TikTok", icon: TiktokLogo, value: tiktok, set: setTiktok, placeholder: "https://tiktok.com/@…" },
+            { id: "website", label: "Website", icon: Globe, value: website, set: setWebsite, placeholder: "https://…" },
+          ] as const
+        ).map((link) => (
+          <Field key={link.id} label={link.label} htmlFor={`social-${link.id}`} optional>
+            <div className="relative">
+              <link.icon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+              <Input
+                id={`social-${link.id}`}
+                type="url"
+                inputMode="url"
+                className="pl-9 text-base sm:text-sm"
+                placeholder={link.placeholder}
+                value={link.value}
+                onChange={(e) => link.set(e.target.value)}
                 disabled={disabled}
               />
             </div>
+          </Field>
+        ))}
+      </FormSection>
+    </>
+  )
 
-            <MenuCategoriesCard
-              categories={menuCategories}
-              items={menuItems}
-              showGlobalCategories={showGlobalMenuCategories}
-              cafeId={cafe?.id}
-              onCategoryAdded={(cat) => setMenuCategories((prev) => [...prev, cat])}
-              onCategoryUpdated={(updated) =>
-                setMenuCategories((prev) =>
-                  prev.map((cat) => (cat.id === updated.id ? updated : cat))
-                )
-              }
-              onDeleteCategory={handleDeleteCategory}
-              disabled={disabled}
-            />
-            <MenuItemsCard
-              items={menuItems}
-              categories={menuCategories}
-              showGlobalCategories={showGlobalMenuCategories}
-              cafeId={cafe?.id}
-              onToggleHighlight={handleToggleHighlight}
-              onDeleteItem={handleDeleteItem}
-              onItemAdded={handleItemAdded}
-              onItemUpdated={handleItemUpdated}
-              onImageUploaded={handleImageUploaded}
-              onImageDeleted={handleImageDeleted}
-              disabled={disabled}
-            />
+  const rail = (
+    <>
+      <RailPanel title="Status">
+        <Select
+          value={listingStatus}
+          onValueChange={(value) => setListingStatus(value as "draft" | "active" | "inactive")}
+          disabled={disabled}
+        >
+          <SelectTrigger className="h-9 w-full" aria-label="Listing status">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="draft">Draft — not in the app</SelectItem>
+            <SelectItem value="active">Active — live in the app</SelectItem>
+            <SelectItem value="inactive">Inactive — hidden</SelectItem>
+          </SelectContent>
+        </Select>
+        <label className="flex cursor-pointer items-center justify-between gap-3">
+          <span className="grid">
+            <span className="text-sm font-medium">Featured</span>
+            <span className="text-xs text-muted-foreground">Promoted in the app</span>
+          </span>
+          <Switch checked={flagFeatured} onCheckedChange={setFlagFeatured} disabled={disabled} />
+        </label>
+        <label className="flex cursor-pointer items-center justify-between gap-3">
+          <span className="grid">
+            <span className="text-sm font-medium">New listing</span>
+            <span className="text-xs text-muted-foreground">Shows a “New” badge</span>
+          </span>
+          <Switch checked={flagNew} onCheckedChange={setFlagNew} disabled={disabled} />
+        </label>
+      </RailPanel>
 
-            {/* CARD 7 — Social Links */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Social Links</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4">
-                <FieldGroup label="Instagram">
-                  <div className="relative">
-                    <InstagramLogo className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-                    <Input
-                      className="pl-8"
-                      placeholder="https://instagram.com/..."
-                      value={instagram}
-                      onChange={(e) => setInstagram(e.target.value)}
-                      disabled={disabled}
-                    />
-                  </div>
-                </FieldGroup>
-                <FieldGroup label="Facebook">
-                  <div className="relative">
-                    <FacebookLogo className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-                    <Input
-                      className="pl-8"
-                      placeholder="https://facebook.com/..."
-                      value={facebook}
-                      onChange={(e) => setFacebook(e.target.value)}
-                      disabled={disabled}
-                    />
-                  </div>
-                </FieldGroup>
-                <FieldGroup label="TikTok">
-                  <div className="relative">
-                    <TiktokLogo className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-                    <Input
-                      className="pl-8"
-                      placeholder="https://tiktok.com/..."
-                      value={tiktok}
-                      onChange={(e) => setTiktok(e.target.value)}
-                      disabled={disabled}
-                    />
-                  </div>
-                </FieldGroup>
-                <FieldGroup label="Website">
-                  <div className="relative">
-                    <Globe className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-                    <Input
-                      className="pl-8"
-                      placeholder="https://..."
-                      value={website}
-                      onChange={(e) => setWebsite(e.target.value)}
-                      disabled={disabled}
-                    />
-                  </div>
-                </FieldGroup>
-              </CardContent>
-            </Card>
+      {mode === "edit" && cafe && (
+        <RailPanel title="Details">
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[13px]">
+            <dt className="text-muted-foreground">Added</dt>
+            <dd className="tabular-nums">
+              {new Date(cafe.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+            </dd>
+            <dt className="text-muted-foreground">Photos</dt>
+            <dd className="tabular-nums">{allPhotos.length} of 5</dd>
+            <dt className="text-muted-foreground">Menu</dt>
+            <dd className="tabular-nums">{menuItems.length} items</dd>
+          </dl>
+          {disabled ? (
+            <Button asChild className="w-full">
+              <Link href={`/admin/cafes/${cafe.id}/edit`}>
+                <PencilSimple aria-hidden />
+                Edit café
+              </Link>
+            </Button>
+          ) : (
+            <Button asChild variant="outline" size="sm" className="w-full">
+              <Link href={`/admin/cafes/${cafe.id}/preview`}>
+                <Eye aria-hidden />
+                Preview listing
+              </Link>
+            </Button>
+          )}
+        </RailPanel>
+      )}
 
-            {/* CARD 8 — Metadata (edit only) */}
-            {mode === "edit" && cafe && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Metadata</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <dl className="flex flex-col gap-3">
-                    <div className="flex items-center gap-6">
-                      <dt className="text-sm text-muted-foreground w-32 shrink-0">
-                        Created
-                      </dt>
-                      <dd className="text-sm">
-                        {new Date(cafe.created_at).toLocaleDateString("en-US", {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </dd>
-                    </div>
-                  </dl>
-                </CardContent>
-              </Card>
-            )}
-          </div>
+      <SectionIndex items={sections} />
+    </>
+  )
 
-          {/* ----------------------------------------------------------------
-              Right column — sticky sidebar
-          ---------------------------------------------------------------- */}
-          <div className="w-full lg:w-72 shrink-0">
-            <div className="space-y-4 sticky top-6">
+  return (
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
+      {/* Hidden in view mode — the café page provides its own header. */}
+      {!disabled && (
+        <FormPageHeader
+          backHref="/admin/cafes"
+          backLabel="Cafés"
+          title={mode === "create" ? "Add café" : name.trim() || "Untitled café"}
+          meta={<StatusChip tone={statusMeta.tone}>{statusMeta.label}</StatusChip>}
+        />
+      )}
 
-              {/* SIDEBAR CARD 1 — Status */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Status</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <Select
-                    value={listingStatus}
-                    onValueChange={(value) =>
-                      setListingStatus(value as "draft" | "active" | "inactive")
-                    }
-                    disabled={disabled}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="draft">Draft</SelectItem>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="inactive">Inactive</SelectItem>
-                    </SelectContent>
-                  </Select>
+      <FormLayout main={main} rail={rail} />
 
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-sm font-medium">isFeatured</span>
-                      <span className="text-xs text-muted-foreground">
-                        Marks this cafe as featured
-                      </span>
-                    </div>
-                    <Switch
-                      checked={flagFeatured}
-                      onCheckedChange={setFlagFeatured}
-                      disabled={disabled}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
+      {!disabled && (
+        <SaveBar
+          dirtyCount={dirtyCount}
+          saving={saving}
+          errorCount={errorCount}
+          onFirstError={focusFirstError}
+          onDiscard={mode === "edit" ? () => setDiscardOpen(true) : undefined}
+          savedLabel={mode === "create" ? "Not saved yet" : "All changes saved"}
+        >
+          {listingStatus === "draft" ? (
+            <>
+              <Button variant="outline" onClick={() => void handleSave("draft")} loading={saving}>
+                Save draft
+              </Button>
+              <Button onClick={() => void handleSave("active")} loading={saving}>
+                Publish
+              </Button>
+            </>
+          ) : (
+            <Button onClick={() => void handleSave()} loading={saving} disabled={mode === "edit" && dirtyCount === 0}>
+              Save changes
+            </Button>
+          )}
+        </SaveBar>
+      )}
 
-              {/* SIDEBAR CARD 2 — Flags */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Flags</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-sm font-medium">New listing</span>
-                      <span className="text-xs text-muted-foreground">
-                        Shows a &apos;New&apos; badge
-                      </span>
-                    </div>
-                    <Switch
-                      checked={flagNew}
-                      onCheckedChange={setFlagNew}
-                      disabled={disabled}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-sm font-medium">Active</span>
-                      <span className="text-xs text-muted-foreground">
-                        Visible in the app
-                      </span>
-                    </div>
-                    <Switch
-                      checked={flagActive}
-                      onCheckedChange={setFlagActive}
-                      disabled={disabled}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* SIDEBAR CARD 3 — Actions */}
-              <Card>
-                <CardContent className="pt-6 space-y-2">
-                  {disabled ? (
-                    <Button className="w-full" asChild>
-                      <Link href={`/admin/cafes/${cafe?.id}/edit`}>
-                        <PencilSimple />
-                        Edit to make changes
-                      </Link>
-                    </Button>
-                  ) : (
-                    <>
-                      {saveError && (
-                        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2">
-                          <p className="text-xs font-medium text-destructive mb-0.5">
-                            {saveError.title}
-                          </p>
-                          <p className="text-xs text-destructive/80">{saveError.message}</p>
-                          {saveError.details.length > 0 && (
-                            <ul className="mt-1 list-disc pl-4 text-xs text-destructive/80 space-y-0.5">
-                              {saveError.details.map((detail) => (
-                                <li key={detail}>{detail}</li>
-                              ))}
-                            </ul>
-                          )}
-                        </div>
-                      )}
-                      {hasMissingRequiredFields && (
-                        <p className="text-xs text-muted-foreground">
-                          Fill required fields first: {missingRequiredFields.join(", ")}.
-                        </p>
-                      )}
-                      <Button
-                        className="w-full"
-                        onClick={handleSave}
-                        disabled={saving || hasMissingRequiredFields}
-                      >
-                        {saving
-                          ? "Saving..."
-                          : mode === "create" ? "Create Listing" : "Save & Publish"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="w-full"
-                        onClick={handleSave}
-                        disabled={saving || hasMissingRequiredFields}
-                      >
-                        {saving ? "Saving..." : "Save as Draft"}
-                      </Button>
-                      <Separator className="my-1" />
-                      {mode === "edit" && cafe?.id ? (
-                        <Button variant="outline" className="w-full" asChild>
-                          <Link href={`/admin/cafes/${cafe.id}/preview`}>
-                            <Eye />
-                            Preview Listing
-                          </Link>
-                        </Button>
-                      ) : (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="block w-full">
-                              <Button
-                                variant="outline"
-                                className="w-full pointer-events-none"
-                                disabled
-                              >
-                                <Eye />
-                                Preview Listing
-                              </Button>
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            Save the listing first to preview it
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        </div>
-      </div>
-    </TooltipProvider>
+      <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Discard {dirtyCount} unsaved {dirtyCount === 1 ? "change" : "changes"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              The page goes back to the last saved version. Photos and menu items saved on their own stay as they are.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={discardChanges}>
+              Discard changes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   )
 }

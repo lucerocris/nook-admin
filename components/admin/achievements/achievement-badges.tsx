@@ -1,21 +1,8 @@
 import type { AchievementCategory, SourceType } from "@/lib/types/achievements"
 import { cn } from "@/lib/utils"
 
-const categoryStyles: Record<AchievementCategory, string> = {
-  crawl: "text-blue-700 border-blue-300 bg-blue-50 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800",
-  drops: "text-purple-700 border-purple-300 bg-purple-50 dark:bg-purple-950 dark:text-purple-400 dark:border-purple-800",
-  social: "text-emerald-700 border-emerald-300 bg-emerald-50 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800",
-  milestones: "text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800",
-  hidden: "text-gray-600 border-gray-300 bg-gray-50 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600",
-}
-
-const sourceTypeStyles: Record<SourceType, string> = {
-  crawl_tier: "text-blue-700 border-blue-300 bg-blue-50 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800",
-  drop_redemption: "text-purple-700 border-purple-300 bg-purple-50 dark:bg-purple-950 dark:text-purple-400 dark:border-purple-800",
-  manual: "text-orange-700 border-orange-300 bg-orange-50 dark:bg-orange-950 dark:text-orange-400 dark:border-orange-800",
-  streak: "text-rose-700 border-rose-300 bg-rose-50 dark:bg-rose-950 dark:text-rose-400 dark:border-rose-800",
-  milestone: "text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800",
-}
+// Category and source are descriptive, not status, so they read as plain
+// bordered pills. Colour stays reserved for status chips (design.md › Color).
 
 const categoryLabels: Record<AchievementCategory, string> = {
   crawl: "Crawl",
@@ -26,35 +13,28 @@ const categoryLabels: Record<AchievementCategory, string> = {
 }
 
 const sourceTypeLabels: Record<SourceType, string> = {
-  crawl_tier: "Crawl Tier",
-  drop_redemption: "Drop Redemption",
+  crawl_tier: "Crawl tier",
+  drop_redemption: "Drop redemption",
   manual: "Manual",
   streak: "Streak",
   milestone: "Milestone",
 }
 
-export function CategoryBadge({ category }: { category: AchievementCategory }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium",
-        categoryStyles[category],
-      )}
-    >
-      {categoryLabels[category]}
-    </span>
-  )
+export function categoryLabel(category: AchievementCategory) {
+  return categoryLabels[category]
 }
 
-export function SourceTypeBadge({ sourceType }: { sourceType: SourceType }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium",
-        sourceTypeStyles[sourceType],
-      )}
-    >
-      {sourceTypeLabels[sourceType]}
-    </span>
-  )
+export function sourceTypeLabel(sourceType: SourceType) {
+  return sourceTypeLabels[sourceType]
+}
+
+const PILL =
+  "inline-flex items-center whitespace-nowrap rounded-full border bg-background px-2 py-0.5 text-xs font-medium text-foreground"
+
+export function CategoryBadge({ category, className }: { category: AchievementCategory; className?: string }) {
+  return <span className={cn(PILL, className)}>{categoryLabels[category]}</span>
+}
+
+export function SourceTypeBadge({ sourceType, className }: { sourceType: SourceType; className?: string }) {
+  return <span className={cn(PILL, "text-muted-foreground", className)}>{sourceTypeLabels[sourceType]}</span>
 }

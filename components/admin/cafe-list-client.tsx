@@ -2,38 +2,23 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import {
-  Plus,
-  MagnifyingGlass,
-  Star,
-  DotsThree,
-  PencilSimple,
-  Eye,
   ArrowLineDown,
   ArrowLineUp,
+  DotsThree,
+  Eye,
+  PencilSimple,
+  Plus,
+  Star,
+  Storefront,
   Trash,
 } from "@phosphor-icons/react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,52 +37,49 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import {
+  BulkBar,
+  FilterChips,
+  FilterSelect,
+  PageHeader,
+  SearchField,
+  SelectAllCheckbox,
+  StatusChip,
+  StatusTabs,
+  TableCard,
+  TableEmpty,
+  TableFooter,
+  TD,
+  TH,
+  Thumb,
+  Toolbar,
+  TR,
+  shortDate,
+  useDebouncedSearch,
+  useUrlState,
+  type ActiveFilter,
+  type Tone,
+} from "@/components/admin/table-kit"
 import { setCafeStatusAction, deleteCafeAction } from "@/app/admin/cafes/actions"
 import { type Cafe } from "@/lib/queries/cafes"
-import { PageTitle } from "@/components/admin/page-header"
 
 type CafeRow = Cafe & { cafe_owner_cafe: { owner_id: string }[] | null }
 type TagOption = { id: string; name: string; category: string }
+type StatusCounts = { all: number; active: number; draft: number; inactive: number }
 
-function StatusBadge({ status }: { status: Cafe["status"] }) {
-  if (status === "active") {
-    return (
-      <Badge variant="outline">
-        <span className="inline-block size-1.5 rounded-full bg-green-500 mr-1.5" />
-        Active
-      </Badge>
-    )
-  }
-  if (status === "draft") {
-    return <Badge variant="secondary">Draft</Badge>
-  }
-  return (
-    <Badge variant="outline" className="text-muted-foreground">
-      Inactive
-    </Badge>
-  )
+const STATUS: Record<Cafe["status"], { label: string; tone: Tone }> = {
+  active: { label: "Active", tone: "success" },
+  draft: { label: "Draft", tone: "warning" },
+  inactive: { label: "Inactive", tone: "danger" },
 }
 
-function OwnerBadge({ claimed }: { claimed: boolean }) {
-  if (claimed) {
-    return (
-      <Badge
-        variant="outline"
-        className="text-green-700 border-green-300 bg-green-50 dark:bg-green-950 dark:text-green-400 dark:border-green-800"
-      >
-        Claimed
-      </Badge>
-    )
-  }
-  return (
-    <Badge
-      variant="outline"
-      className="text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800"
-    >
-      Unclaimed
-    </Badge>
-  )
-}
+const SORTS = [
+  { value: "recent", label: "Recently added" },
+  { value: "az", label: "Name A–Z" },
+  { value: "rating", label: "Highest rated" },
+]
+
+const FILTER_KEYS = ["search", "neighborhood", "tag", "featured", "owner", "sort"]
 
 function CafeActions({ cafe }: { cafe: CafeRow }) {
   const router = useRouter()
@@ -107,10 +89,9 @@ function CafeActions({ cafe }: { cafe: CafeRow }) {
     startTransition(async () => {
       try {
         await setCafeStatusAction(cafe.id, status)
-        toast.success(status === "active" ? "Cafe activated" : "Cafe deactivated")
+        toast.success(status === "active" ? `${cafe.name} is live` : `${cafe.name} is hidden`)
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to update cafe status"
-        toast.error(message)
+        toast.error(error instanceof Error ? error.message : "Couldn’t change the status")
       }
     })
   }
@@ -119,10 +100,9 @@ function CafeActions({ cafe }: { cafe: CafeRow }) {
     startTransition(async () => {
       try {
         await deleteCafeAction(cafe.id)
-        toast.success("Cafe deleted")
+        toast.success(`${cafe.name} deleted`)
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to delete cafe"
-        toast.error(message)
+        toast.error(error instanceof Error ? error.message : "Couldn’t delete the café")
       }
     })
   }
@@ -131,11 +111,11 @@ function CafeActions({ cafe }: { cafe: CafeRow }) {
     <AlertDialog>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" disabled={isPending}>
+          <Button variant="ghost" size="icon-sm" disabled={isPending} aria-label={`Actions for ${cafe.name}`}>
             <DotsThree weight="bold" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="w-44">
           <DropdownMenuItem onClick={() => router.push(`/admin/cafes/${cafe.id}/edit`)}>
             <PencilSimple />
             Edit
@@ -144,29 +124,22 @@ function CafeActions({ cafe }: { cafe: CafeRow }) {
             <Eye />
             Preview
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
+          {cafe.status !== "draft" && <DropdownMenuSeparator />}
           {cafe.status === "active" && (
-            <DropdownMenuItem
-              onClick={() => handleStatusChange("inactive")}
-            >
+            <DropdownMenuItem onClick={() => handleStatusChange("inactive")}>
               <ArrowLineDown />
               Deactivate
             </DropdownMenuItem>
           )}
           {cafe.status === "inactive" && (
-            <DropdownMenuItem
-              onClick={() => handleStatusChange("active")}
-            >
+            <DropdownMenuItem onClick={() => handleStatusChange("active")}>
               <ArrowLineUp />
               Activate
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator />
           <AlertDialogTrigger asChild>
-            <DropdownMenuItem
-              variant="destructive"
-              onSelect={(e) => e.preventDefault()}
-            >
+            <DropdownMenuItem variant="destructive" onSelect={(e) => e.preventDefault()}>
               <Trash />
               Delete
             </DropdownMenuItem>
@@ -176,22 +149,40 @@ function CafeActions({ cafe }: { cafe: CafeRow }) {
 
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete cafe?</AlertDialogTitle>
+          <AlertDialogTitle>Delete {cafe.name}?</AlertDialogTitle>
           <AlertDialogDescription>
-            This cannot be undone.
+            The listing, its menu and photos are removed from Nook. This can’t be undone.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            onClick={handleDelete}
-          >
-            Delete
+          <AlertDialogAction variant="destructive" onClick={handleDelete}>
+            Delete café
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  )
+}
+
+function Rating({ cafe }: { cafe: CafeRow }) {
+  // Unreviewed cafés carry rating 0 rather than null; no real rating is 0.
+  if (!cafe.rating) {
+    return <span className="text-muted-foreground">No reviews</span>
+  }
+  return (
+    <span className="inline-flex items-center gap-1 tabular-nums">
+      <Star weight="fill" className="size-3.5 text-foreground" aria-hidden />
+      {Number(cafe.rating).toFixed(1)}
+    </span>
+  )
+}
+
+function OwnerChip({ claimed }: { claimed: boolean }) {
+  return claimed ? (
+    <StatusChip tone="neutral">Claimed</StatusChip>
+  ) : (
+    <StatusChip tone="warning">Unclaimed</StatusChip>
   )
 }
 
@@ -202,6 +193,8 @@ export function CafeListClient({
   page,
   total,
   totalPages,
+  pageSize,
+  statusCounts,
 }: {
   cafes: CafeRow[]
   tagOptions: TagOption[]
@@ -209,333 +202,295 @@ export function CafeListClient({
   page: number
   total: number
   totalPages: number
+  pageSize: number
+  statusCounts: StatusCounts
 }) {
-  const router = useRouter()
-  const params = useSearchParams()
+  const url = useUrlState()
+  const search = useDebouncedSearch()
+  const [selected, setSelected] = React.useState<Set<string>>(new Set())
+  const [bulkPending, startBulk] = React.useTransition()
 
-  const pushWithParams = React.useCallback(
-    (nextParams: URLSearchParams) => {
-      const query = nextParams.toString()
-      router.push(query ? `/admin/cafes?${query}` : "/admin/cafes")
-    },
-    [router]
-  )
+  // Selection is per page: a new page or filter is a new set of rows.
+  const rowKey = cafes.map((c) => c.id).join(",")
+  React.useEffect(() => setSelected(new Set()), [rowKey])
 
-  // `defaultValue` is the key the param drops back to, so it never has to be
-  // spelled out in the URL — keeps a default-state filter bar at /admin/cafes.
-  const updateFilterParam = React.useCallback(
-    (key: string, value: string, defaultValue = "all") => {
-      const p = new URLSearchParams(params.toString())
-      if (value && value !== defaultValue) {
-        p.set(key, value)
-      } else {
-        p.delete(key)
-      }
-      // Any filter change invalidates the current offset: page 4 of the old
-      // result set is usually past the end of the new one.
-      p.delete("page")
-      pushWithParams(p)
-    },
-    [params, pushWithParams]
-  )
+  const status = url.get("status", "all")
+  const neighborhood = url.get("neighborhood", "all")
+  const tag = url.get("tag", "all")
+  const featured = url.get("featured", "all")
+  const owner = url.get("owner", "all")
+  const sort = url.get("sort", "recent")
 
-  const searchParam = params.get("search") ?? ""
-  const [searchInput, setSearchInput] = React.useState(searchParam)
-  // Distinguishes the user typing from the URL changing underneath us (back
-  // button, filter reset) — without it, the debounce would fight navigation by
-  // re-pushing the stale input.
-  const isTypingRef = React.useRef(false)
+  const filters: ActiveFilter[] = []
+  if (url.get("search")) filters.push({ key: "search", label: "Search", value: `“${url.get("search")}”`, onRemove: () => url.set("search", "") })
+  if (neighborhood !== "all") filters.push({ key: "neighborhood", label: "Area is", value: neighborhood, onRemove: () => url.set("neighborhood", "all", "all") })
+  if (tag !== "all") filters.push({ key: "tag", label: "Tag is", value: tagOptions.find((t) => t.id === tag)?.name ?? "Unknown tag", onRemove: () => url.set("tag", "all", "all") })
+  if (featured !== "all") filters.push({ key: "featured", label: "Featured", value: featured === "featured" ? "Yes" : "No", onRemove: () => url.set("featured", "all", "all") })
+  if (owner !== "all") filters.push({ key: "owner", label: "Owner", value: owner === "claimed" ? "Claimed" : "Unclaimed", onRemove: () => url.set("owner", "all", "all") })
 
-  React.useEffect(() => {
-    if (!isTypingRef.current) {
-      setSearchInput(searchParam)
+  const allOnPage = cafes.length > 0 && cafes.every((c) => selected.has(c.id))
+  const someOnPage = cafes.some((c) => selected.has(c.id))
+
+  function toggle(id: string, on: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  // setCafeStatusAction takes one id, so a bulk change is one call per café.
+  // Drafts are skipped: publishing a draft is a decision made on its own page.
+  function bulkStatus(next: "active" | "inactive") {
+    const targets = cafes.filter((c) => selected.has(c.id) && c.status !== "draft" && c.status !== next)
+    if (targets.length === 0) {
+      toast.info(next === "active" ? "Nothing to activate in the selection" : "Nothing to deactivate in the selection")
       return
     }
-    if (searchInput === searchParam) {
-      isTypingRef.current = false
-      return
-    }
-    const timer = setTimeout(() => {
-      isTypingRef.current = false
-      updateFilterParam("search", searchInput, "")
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [searchInput, searchParam, updateFilterParam])
-
-  function handleSearch(value: string) {
-    isTypingRef.current = true
-    setSearchInput(value)
+    startBulk(async () => {
+      const results = await Promise.allSettled(targets.map((c) => setCafeStatusAction(c.id, next)))
+      const failed = results.filter((r) => r.status === "rejected").length
+      const done = targets.length - failed
+      if (done > 0) toast.success(`${done} ${done === 1 ? "café" : "cafés"} ${next === "active" ? "activated" : "deactivated"}`)
+      if (failed > 0) toast.error(`${failed} couldn’t be changed. Try them again.`)
+      setSelected(new Set())
+    })
   }
 
-  function handleStatus(value: string) {
-    updateFilterParam("status", value)
-  }
-
-  function handleNeighborhood(value: string) {
-    updateFilterParam("neighborhood", value)
-  }
-
-  function handleTag(value: string) {
-    updateFilterParam("tag", value)
-  }
-
-  function handleFeatured(value: string) {
-    updateFilterParam("featured", value)
-  }
-
-  function handleOwner(value: string) {
-    updateFilterParam("owner", value)
-  }
-
-  function handleSort(value: string) {
-    updateFilterParam("sort", value, "recent")
-  }
-
-  function handlePage(nextPage: number) {
-    const p = new URLSearchParams(params.toString())
-    if (nextPage <= 1) {
-      p.delete("page")
-    } else {
-      p.set("page", String(nextPage))
-    }
-    pushWithParams(p)
-  }
-
-  const hasResults = cafes.length > 0
-  const startItem = hasResults ? (page - 1) * 10 + 1 : 0
-  const endItem = hasResults ? startItem + cafes.length - 1 : 0
+  const hasFilters = filters.length > 0
+  const empty =
+    cafes.length === 0 ? (
+      hasFilters || status !== "all" ? (
+        <TableEmpty
+          icon={Storefront}
+          title="No cafés match"
+          body="Try a different search or fewer filters."
+          action={
+            <Button variant="outline" size="sm" onClick={() => url.clear([...FILTER_KEYS, "status"])}>
+              Clear filters
+            </Button>
+          }
+        />
+      ) : (
+        <TableEmpty
+          icon={Storefront}
+          title="No cafés yet"
+          body="Listings you add show up here, as drafts until you publish them."
+          action={
+            <Button asChild size="sm">
+              <Link href="/admin/cafes/new">Add café</Link>
+            </Button>
+          }
+        />
+      )
+    ) : undefined
 
   return (
-    <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 px-4 py-6 lg:px-6">
-      {/* Section 1 — Page header */}
-      <div className="flex items-end justify-between gap-4">
-        <PageTitle
-          eyebrow="Listings"
-          title="Cafes"
-          lead="Manage all cafe listings"
-        />
-        <Button asChild>
-          <Link href="/admin/cafes/new">
-            <Plus />
-            Add Cafe
-          </Link>
-        </Button>
-      </div>
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8">
+      <PageHeader
+        title="Cafés"
+        summary={`${statusCounts.all.toLocaleString()} listings · ${statusCounts.active.toLocaleString()} live on Nook`}
+        action={
+          <Button asChild>
+            <Link href="/admin/cafes/new">
+              <Plus aria-hidden />
+              Add café
+            </Link>
+          </Button>
+        }
+      />
 
-      {/* Section 2 — Filters and search */}
-      <div className="flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-[200px]">
-          <MagnifyingGlass className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-          <Input
-            className="pl-8"
-            placeholder="Search cafes..."
-            value={searchInput}
-            onChange={(e) => handleSearch(e.target.value)}
+      <StatusTabs
+        value={status}
+        onChange={(v) => url.set("status", v, "all")}
+        tabs={[
+          { value: "all", label: "All", count: statusCounts.all },
+          { value: "active", label: "Active", count: statusCounts.active },
+          { value: "draft", label: "Draft", count: statusCounts.draft },
+          { value: "inactive", label: "Inactive", count: statusCounts.inactive },
+        ]}
+      />
+
+      {selected.size > 0 ? (
+        <BulkBar count={selected.size} onClear={() => setSelected(new Set())}>
+          <Button variant="outline" size="sm" loading={bulkPending} onClick={() => bulkStatus("active")}>
+            <ArrowLineUp aria-hidden />
+            Activate
+          </Button>
+          <Button variant="outline" size="sm" loading={bulkPending} onClick={() => bulkStatus("inactive")}>
+            <ArrowLineDown aria-hidden />
+            Deactivate
+          </Button>
+        </BulkBar>
+      ) : (
+        <Toolbar>
+          <SearchField value={search.value} onChange={search.onChange} placeholder="Search cafés by name" />
+          <FilterSelect
+            label="Area"
+            value={neighborhood}
+            onChange={(v) => url.set("neighborhood", v, "all")}
+            options={neighborhoodOptions.map((n) => ({ value: n, label: n }))}
           />
-        </div>
+          <FilterSelect
+            label="Tag"
+            value={tag}
+            onChange={(v) => url.set("tag", v, "all")}
+            options={tagOptions.map((t) => ({ value: t.id, label: t.name }))}
+          />
+          <FilterSelect
+            label="Featured"
+            value={featured}
+            onChange={(v) => url.set("featured", v, "all")}
+            allLabel="Featured or not"
+            options={[
+              { value: "featured", label: "Featured" },
+              { value: "not-featured", label: "Not featured" },
+            ]}
+          />
+          <FilterSelect
+            label="Owner"
+            value={owner}
+            onChange={(v) => url.set("owner", v, "all")}
+            allLabel="Any owner"
+            options={[
+              { value: "claimed", label: "Claimed" },
+              { value: "unclaimed", label: "Unclaimed" },
+            ]}
+          />
+          <FilterSelect
+            label="Sort"
+            value={sort}
+            allValue="recent"
+            allLabel="Recently added"
+            onChange={(v) => url.set("sort", v, "recent")}
+            options={SORTS.filter((s) => s.value !== "recent")}
+          />
+        </Toolbar>
+      )}
 
-        <Select
-          value={params.get("status") ?? "all"}
-          onValueChange={handleStatus}
-        >
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="draft">Draft</SelectItem>
-            <SelectItem value="inactive">Inactive</SelectItem>
-          </SelectContent>
-        </Select>
+      <FilterChips filters={filters} onClearAll={() => url.clear(FILTER_KEYS)} />
 
-        <Select
-          value={params.get("neighborhood") ?? "all"}
-          onValueChange={handleNeighborhood}
-        >
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Area" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All areas</SelectItem>
-            {neighborhoodOptions.map((neighborhood) => (
-              <SelectItem key={neighborhood} value={neighborhood}>
-                {neighborhood}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={params.get("tag") ?? "all"}
-          onValueChange={handleTag}
-        >
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Tag" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All tags</SelectItem>
-            {tagOptions.map((tag) => (
-              <SelectItem key={tag.id} value={tag.id}>
-                {tag.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={params.get("featured") ?? "all"}
-          onValueChange={handleFeatured}
-        >
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Featured" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Featured &amp; not</SelectItem>
-            <SelectItem value="featured">Featured only</SelectItem>
-            <SelectItem value="not-featured">Not featured</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={params.get("owner") ?? "all"}
-          onValueChange={handleOwner}
-        >
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Owner" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All owners</SelectItem>
-            <SelectItem value="claimed">Claimed</SelectItem>
-            <SelectItem value="unclaimed">Unclaimed</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={params.get("sort") ?? "recent"}
-          onValueChange={handleSort}
-        >
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Sort" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="recent">Recently Added</SelectItem>
-            <SelectItem value="az">A–Z</SelectItem>
-            <SelectItem value="rating">Highest Rated</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Section 3 — Cafe table */}
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Cafe</TableHead>
-            <TableHead>Area</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Owner</TableHead>
-            <TableHead>Rating</TableHead>
-            <TableHead />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {cafes.map((cafe) => {
-            const claimed = (cafe.cafe_owner_cafe?.length ?? 0) > 0
-            return (
-              <TableRow key={cafe.id}>
-                <TableCell>
-                  <div className="flex items-center gap-3">
-                    {cafe.featured_image_url ? (
-                      <div
-                        className="size-10 rounded-md bg-muted shrink-0 bg-cover bg-center"
-                        style={{ backgroundImage: `url(${cafe.featured_image_url})` }}
-                        aria-hidden="true"
-                      />
-                    ) : (
-                      <div className="size-10 rounded-md bg-muted shrink-0" aria-hidden="true" />
-                    )}
-                    <div className="flex flex-col">
-                      <span className="flex items-center gap-1.5">
-                        <Link
-                          href={`/admin/cafes/${cafe.id}`}
-                          className="font-medium text-sm hover:underline underline-offset-2"
-                        >
-                          {cafe.name}
-                        </Link>
-                        {cafe.is_featured && (
-                          <Badge
-                            variant="outline"
-                            className="text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800"
-                          >
-                            Featured
-                          </Badge>
-                        )}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {cafe.neighborhood ?? cafe.city}
-                      </span>
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell>{cafe.neighborhood ?? cafe.city}</TableCell>
-                <TableCell>
-                  <StatusBadge status={cafe.status} />
-                </TableCell>
-                <TableCell>
-                  <OwnerBadge claimed={claimed} />
-                </TableCell>
-                <TableCell>
-                  {cafe.rating !== null ? (
-                    <span className="flex items-center gap-1">
-                      <Star weight="fill" className="text-yellow-400 size-3.5" />
-                      <span className="text-sm">{cafe.rating}</span>
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-right">
-                  <CafeActions cafe={cafe} />
-                </TableCell>
+      <TableCard
+        busy={url.isPending}
+        empty={empty}
+        table={
+          <Table>
+            <TableHeader>
+              <TableRow className="border-b hover:bg-transparent">
+                <TableHead className={`${TH} w-10`}>
+                  <SelectAllCheckbox
+                    checked={allOnPage}
+                    indeterminate={someOnPage && !allOnPage}
+                    onChange={(on) => setSelected(on ? new Set(cafes.map((c) => c.id)) : new Set())}
+                  />
+                </TableHead>
+                <TableHead className={TH}>Café</TableHead>
+                <TableHead className={TH}>Status</TableHead>
+                <TableHead className={TH}>Owner</TableHead>
+                <TableHead className={TH}>Rating</TableHead>
+                <TableHead className={TH}>Added</TableHead>
+                <TableHead className={`${TH} w-12`}>
+                  <span className="sr-only">Actions</span>
+                </TableHead>
               </TableRow>
-            )
-          })}
-          {!hasResults && (
-            <TableRow>
-              <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                No cafes found for the current filters.
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
-
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          Showing {startItem}-{endItem} of {total}
-        </p>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handlePage(page - 1)}
-            disabled={page <= 1}
-          >
-            Previous
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            Page {totalPages === 0 ? 0 : page} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handlePage(page + 1)}
-            disabled={totalPages === 0 || page >= totalPages}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
+            </TableHeader>
+            <TableBody>
+              {cafes.map((cafe) => {
+                const claimed = (cafe.cafe_owner_cafe?.length ?? 0) > 0
+                const isSelected = selected.has(cafe.id)
+                const area = [cafe.neighborhood, cafe.city].filter(Boolean).join(", ")
+                return (
+                  <TableRow key={cafe.id} data-state={isSelected ? "selected" : undefined} className={TR}>
+                    <TableCell className={TD}>
+                      <Checkbox
+                        aria-label={`Select ${cafe.name}`}
+                        checked={isSelected}
+                        onCheckedChange={(v) => toggle(cafe.id, v === true)}
+                      />
+                    </TableCell>
+                    <TableCell className={`${TD} max-w-[22rem]`}>
+                      <div className="flex items-center gap-3">
+                        <Thumb src={cafe.featured_image_url} />
+                        <div className="grid min-w-0 leading-tight">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <Link
+                              href={`/admin/cafes/${cafe.id}`}
+                              className="truncate font-medium outline-hidden hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              {cafe.name}
+                            </Link>
+                            {cafe.is_featured && (
+                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 text-[11px] font-medium">
+                                <Star weight="fill" className="size-2.5" aria-hidden />
+                                Featured
+                              </span>
+                            )}
+                          </span>
+                          <span className="truncate text-xs text-muted-foreground">{area || "No area set"}</span>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className={TD}>
+                      <StatusChip tone={STATUS[cafe.status].tone}>{STATUS[cafe.status].label}</StatusChip>
+                    </TableCell>
+                    <TableCell className={TD}>
+                      <OwnerChip claimed={claimed} />
+                    </TableCell>
+                    <TableCell className={TD}>
+                      <Rating cafe={cafe} />
+                    </TableCell>
+                    <TableCell className={`${TD} text-muted-foreground tabular-nums`}>
+                      {cafe.created_at ? shortDate(cafe.created_at) : "—"}
+                    </TableCell>
+                    <TableCell className={`${TD} text-right`}>
+                      <CafeActions cafe={cafe} />
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        }
+        list={cafes.map((cafe) => {
+          const claimed = (cafe.cafe_owner_cafe?.length ?? 0) > 0
+          const area = [cafe.neighborhood, cafe.city].filter(Boolean).join(", ")
+          return (
+            <li key={cafe.id} className="flex items-start gap-3 px-4 py-3">
+              <Checkbox
+                aria-label={`Select ${cafe.name}`}
+                checked={selected.has(cafe.id)}
+                onCheckedChange={(v) => toggle(cafe.id, v === true)}
+                className="mt-3"
+              />
+              <Thumb src={cafe.featured_image_url} />
+              <div className="min-w-0 flex-1">
+                <Link href={`/admin/cafes/${cafe.id}`} className="block truncate text-sm font-medium">
+                  {cafe.name}
+                </Link>
+                <p className="truncate text-xs text-muted-foreground">{area || "No area set"}</p>
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+                  <StatusChip tone={STATUS[cafe.status].tone}>{STATUS[cafe.status].label}</StatusChip>
+                  <OwnerChip claimed={claimed} />
+                  <Rating cafe={cafe} />
+                </div>
+              </div>
+              <CafeActions cafe={cafe} />
+            </li>
+          )
+        })}
+        footer={
+          <TableFooter
+            page={page}
+            pageSize={pageSize}
+            shown={cafes.length}
+            total={total}
+            totalPages={totalPages}
+            onPage={(p) => url.set("page", p > 1 ? String(p) : "")}
+            noun="cafés"
+          />
+        }
+      />
     </div>
   )
 }

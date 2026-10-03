@@ -1,15 +1,17 @@
 "use client"
 
+// Manual award (design.md › Page skeletons › Short task form): one centred
+// column of numbered steps — user, achievement, note — then a summary line and
+// the action button. No rail and no save bar; it's a one-shot task.
+
 import * as React from "react"
+import Link from "next/link"
 import { useSearchParams, useRouter } from "next/navigation"
 import {
   CaretUpDown,
   Check,
-  MagnifyingGlass,
-  WarningCircle,
   CheckCircle,
   ImageSquare,
-  ArrowLeft,
   User,
 } from "@phosphor-icons/react"
 import { toast } from "sonner"
@@ -30,10 +32,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command"
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card"
+import { Field, FormPageHeader } from "@/components/admin/form-kit"
 import { cn } from "@/lib/utils"
 import { CategoryBadge } from "./achievement-badges"
 import type { AchievementDef, Profile } from "@/lib/types/achievements"
@@ -42,12 +41,19 @@ import {
   checkDuplicateAwardAction,
   awardAchievementAction,
 } from "@/lib/actions/achievements"
-import { PageTitle } from "@/components/admin/page-header"
 
 function nowLocalISO() {
   const now = new Date()
   now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
   return now.toISOString().slice(0, 16)
+}
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
 }
 
 type DuplicateStatus =
@@ -56,6 +62,92 @@ type DuplicateStatus =
   | { kind: "clean" }
   | { kind: "duplicate"; earnedAt: string }
   | { kind: "error"; message: string }
+
+const PAGE = "mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8"
+const COLUMN = "mx-auto w-full max-w-2xl"
+// Combobox triggers: 44px on phones, matching inputs on desktop.
+const TRIGGER =
+  "h-11 w-full justify-between px-3 font-normal sm:h-10 aria-invalid:border-destructive"
+
+/** One numbered block in the column. A hairline separates it from the one above. */
+function Step({
+  n,
+  id,
+  title,
+  description,
+  children,
+}: {
+  n: number
+  id: string
+  title: string
+  description?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <section
+      id={id}
+      aria-labelledby={`${id}-title`}
+      className="scroll-mt-6 border-t py-8 first:border-t-0 first:pt-2"
+    >
+      <div className="mb-5 flex items-start gap-3">
+        <span
+          aria-hidden
+          className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold tabular-nums text-muted-foreground"
+        >
+          {n}
+        </span>
+        <div className="min-w-0">
+          <h2 id={`${id}-title`} className="text-[15px] leading-6 font-semibold">
+            <span className="sr-only">Step {n}: </span>
+            {title}
+          </h2>
+          {description && (
+            <p className="mt-1 text-[13px] text-muted-foreground">{description}</p>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-col gap-4 sm:pl-9">{children}</div>
+    </section>
+  )
+}
+
+function UserAvatar({ profile, size }: { profile: Profile; size: "sm" | "md" }) {
+  const box = size === "sm" ? "size-6" : "size-7"
+  return (
+    <span
+      className={cn(
+        box,
+        "flex shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground",
+      )}
+    >
+      {profile.avatar_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={profile.avatar_url} alt="" className={cn(box, "rounded-full object-cover")} />
+      ) : (
+        <User className={size === "sm" ? "size-3" : "size-3.5"} aria-hidden />
+      )}
+    </span>
+  )
+}
+
+function BadgeThumb({ achievement, size }: { achievement: AchievementDef; size: "sm" | "md" }) {
+  const box = size === "sm" ? "size-6" : "size-7"
+  return (
+    <span
+      className={cn(
+        box,
+        "flex shrink-0 items-center justify-center rounded border bg-muted text-muted-foreground/40",
+      )}
+    >
+      {achievement.badge_image_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={achievement.badge_image_url} alt="" className={cn(box, "rounded object-cover")} />
+      ) : (
+        <ImageSquare className={size === "sm" ? "size-3" : "size-3.5"} aria-hidden />
+      )}
+    </span>
+  )
+}
 
 export function ManualAwardClient({
   initialAchievements,
@@ -72,6 +164,9 @@ export function ManualAwardClient({
   const [note, setNote] = React.useState("")
   const [earnedAt, setEarnedAt] = React.useState(nowLocalISO)
   const [submitted, setSubmitted] = React.useState(false)
+  // Set on the first award attempt; from then on missing fields show errors
+  // under themselves instead of waiting quietly.
+  const [attempted, setAttempted] = React.useState(false)
 
   const [userOpen, setUserOpen] = React.useState(false)
   const [achievementOpen, setAchievementOpen] = React.useState(false)
@@ -93,6 +188,8 @@ export function ManualAwardClient({
     }
   }, [preselectedId, initialAchievements])
 
+  // Whenever both a user and an achievement are chosen, ask the server whether
+  // that user already has it — an achievement can only be awarded once.
   React.useEffect(() => {
     if (!selectedUser || !selectedAchievement) {
       setDuplicateStatus({ kind: "idle" })
@@ -137,6 +234,49 @@ export function ManualAwardClient({
     }, 300)
   }
 
+  // ---- Validation -------------------------------------------------------
+  // Per-field errors. "Missing" errors wait for the first attempt; problems
+  // the admin can't see otherwise (duplicate, future date) show straight away.
+
+  const earnedAtInFuture = !!earnedAt && new Date(earnedAt) > new Date()
+
+  const userError = attempted && !selectedUser ? "Choose a user." : null
+
+  const achievementError = !selectedAchievement
+    ? attempted
+      ? "Choose an achievement."
+      : null
+    : duplicateStatus.kind === "duplicate" && selectedUser
+      ? `${selectedUser.username} already earned this on ${formatDate(duplicateStatus.earnedAt)}. An achievement can only be awarded once.`
+      : duplicateStatus.kind === "error"
+        ? `Couldn’t check whether they already have it: ${duplicateStatus.message}`
+        : null
+
+  const earnedAtError = !earnedAt
+    ? attempted
+      ? "Pick when it was earned."
+      : null
+    : earnedAtInFuture
+      ? "The date can’t be in the future."
+      : null
+
+  /** First thing stopping the award, in step order, or null when ready. */
+  const blocker: { message: string; focusId: string } | null = !selectedUser
+    ? { message: "Choose a user in step 1.", focusId: "award-user" }
+    : !selectedAchievement
+      ? { message: "Choose an achievement in step 2.", focusId: "award-achievement" }
+      : duplicateStatus.kind === "checking" || duplicateStatus.kind === "idle"
+        ? { message: "Checking whether they already have it…", focusId: "award-achievement" }
+        : duplicateStatus.kind === "duplicate"
+          ? { message: "They already have this achievement.", focusId: "award-achievement" }
+          : duplicateStatus.kind === "error"
+            ? { message: "Couldn’t check for an existing award.", focusId: "award-achievement" }
+            : !earnedAt
+              ? { message: "Pick when it was earned in step 3.", focusId: "award-earned-at" }
+              : earnedAtInFuture
+                ? { message: "The date in step 3 can’t be in the future.", focusId: "award-earned-at" }
+                : null
+
   const canSubmit =
     selectedUser &&
     selectedAchievement &&
@@ -151,11 +291,20 @@ export function ManualAwardClient({
     setNote("")
     setEarnedAt(nowLocalISO())
     setSubmitted(false)
+    setAttempted(false)
     setDuplicateStatus({ kind: "idle" })
   }
 
   async function handleSubmit() {
-    if (!canSubmit || !selectedUser || !selectedAchievement) return
+    // The button stays enabled so it can explain what's missing: show the
+    // field errors and move focus to the first problem instead of awarding.
+    if (!canSubmit || !selectedUser || !selectedAchievement) {
+      setAttempted(true)
+      if (blocker && duplicateStatus.kind !== "checking") {
+        document.getElementById(blocker.focusId)?.focus()
+      }
+      return
+    }
 
     setSaving(true)
     try {
@@ -181,374 +330,361 @@ export function ManualAwardClient({
     }
   }
 
+  // ---- Success ----------------------------------------------------------
+
   if (submitted && selectedUser && selectedAchievement) {
     return (
-      <div className="w-full max-w-2xl mx-auto flex flex-col gap-6 px-4 py-6 lg:px-6">
-        <div className="flex flex-col items-center gap-4 py-12 text-center">
-          <div className="size-12 rounded-full bg-emerald-100 dark:bg-emerald-900 flex items-center justify-center">
-            <CheckCircle className="size-6 text-emerald-600 dark:text-emerald-400" />
+      <div className={PAGE}>
+        <FormPageHeader
+          backHref="/admin/achievements"
+          backLabel="Achievements"
+          title="Award an achievement"
+        />
+        <div className={COLUMN}>
+          <div
+            role="status"
+            className="flex flex-col items-center gap-4 rounded-xl border px-6 py-12 text-center"
+          >
+            <span className="flex size-12 items-center justify-center rounded-full bg-emerald-50">
+              <CheckCircle className="size-6 text-emerald-700" aria-hidden />
+            </span>
+            <div>
+              <h2 className="text-[15px] font-semibold">Achievement awarded</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{selectedUser.username}</span>{" "}
+                now has{" "}
+                <span className="font-medium text-foreground">{selectedAchievement.name}</span>.
+              </p>
+            </div>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button variant="outline" onClick={handleAwardAnother}>
+                Award another
+              </Button>
+              <Button variant="ghost" asChild>
+                <Link href="/admin/achievements">Back to achievements</Link>
+              </Button>
+            </div>
           </div>
-          <div>
-            <h2 className="text-lg font-semibold">Achievement Awarded</h2>
-            <p className="text-muted-foreground text-sm mt-1">
-              <span className="font-medium text-foreground">
-                {selectedUser.username}
-              </span>{" "}
-              has been awarded{" "}
-              <span className="font-medium text-foreground">
-                {selectedAchievement.name}
-              </span>
-              .
-            </p>
-          </div>
-          <Button variant="outline" onClick={handleAwardAnother}>
-            Award Another
-          </Button>
         </div>
       </div>
     )
   }
 
+  // ---- Form -------------------------------------------------------------
+
   return (
-    <div className="w-full max-w-2xl mx-auto flex flex-col gap-6 px-4 py-6 lg:px-6">
-      <div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="mb-2 -ml-2 text-muted-foreground"
-          onClick={() => window.history.back()}
+    <div className={PAGE}>
+      <FormPageHeader
+        backHref="/admin/achievements"
+        backLabel="Achievements"
+        title="Award an achievement"
+      />
+
+      <div className={COLUMN}>
+        <p className="mb-6 text-sm text-muted-foreground">
+          Give someone an achievement by hand. It’s recorded with source{" "}
+          <span className="rounded bg-muted px-1 py-0.5 font-mono text-xs">manual</span>.
+        </p>
+
+        <form
+          noValidate
+          onSubmit={(e) => {
+            e.preventDefault()
+            handleSubmit()
+          }}
         >
-          <ArrowLeft />
-          Back
-        </Button>
-        <PageTitle
-          size="sm"
-          eyebrow="Achievements"
-          title="Award Achievement"
-          lead={
-            <>
-              Manually grant an achievement to a user with{" "}
-              <span className="font-mono text-xs bg-muted px-1 py-0.5 rounded">
-                source_type = &quot;manual&quot;
-              </span>
-            </>
-          }
-        />
-      </div>
-
-      <Card>
-        <CardContent className="pt-6 flex flex-col gap-5">
-          {/* User selector */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium leading-none">User</label>
-            <Popover open={userOpen} onOpenChange={setUserOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  role="combobox"
-                  aria-expanded={userOpen}
-                  className="justify-between"
-                >
-                  {selectedUser ? (
-                    <div className="flex items-center gap-2">
-                      <div className="size-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-medium text-muted-foreground shrink-0">
-                        {selectedUser.avatar_url ? (
-                          <img
-                            src={selectedUser.avatar_url}
-                            alt=""
-                            className="size-6 rounded-full object-cover"
-                          />
-                        ) : (
-                          <User className="size-3" />
+          {/* 1 · User */}
+          <Step n={1} id="step-user" title="Choose the user">
+            <Field label="User" htmlFor="award-user" error={userError}>
+              <Popover open={userOpen} onOpenChange={setUserOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="award-user"
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={userOpen}
+                    aria-invalid={!!userError || undefined}
+                    aria-describedby={userError ? "award-user-hint" : undefined}
+                    className={TRIGGER}
+                  >
+                    {selectedUser ? (
+                      <span className="flex min-w-0 items-center gap-2">
+                        <UserAvatar profile={selectedUser} size="sm" />
+                        <span className="truncate text-sm">{selectedUser.username}</span>
+                        {selectedUser.full_name && (
+                          <span className="hidden truncate text-xs text-muted-foreground sm:inline">
+                            {selectedUser.full_name}
+                          </span>
                         )}
-                      </div>
-                      <span className="text-sm">{selectedUser.username}</span>
-                      {selectedUser.full_name && (
-                        <span className="text-xs text-muted-foreground">
-                          ({selectedUser.full_name})
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground text-sm">
-                      Search by username or email...
-                    </span>
-                  )}
-                  <CaretUpDown className="size-4 shrink-0 text-muted-foreground" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[400px] p-0" align="start">
-                <Command shouldFilter={false}>
-                  <CommandInput
-                    placeholder="Search users..."
-                    value={searchQuery}
-                    onValueChange={handleUserSearch}
-                  />
-                  <CommandList>
-                    {searching && (
-                      <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-                        Searching...
-                      </div>
-                    )}
-                    {!searching && users.length === 0 && searchQuery.length >= 2 && (
-                      <CommandEmpty>No users found.</CommandEmpty>
-                    )}
-                    {!searching && searchQuery.length < 2 && (
-                      <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-                        Type at least 2 characters to search
-                      </div>
-                    )}
-                    <CommandGroup>
-                      {users.map((profile) => (
-                        <CommandItem
-                          key={profile.id}
-                          value={profile.id}
-                          onSelect={() => {
-                            setSelectedUser(profile)
-                            setUserOpen(false)
-                          }}
-                        >
-                          <div className="size-7 rounded-full bg-muted flex items-center justify-center text-[10px] font-medium text-muted-foreground shrink-0">
-                            {profile.avatar_url ? (
-                              <img
-                                src={profile.avatar_url}
-                                alt=""
-                                className="size-7 rounded-full object-cover"
-                              />
-                            ) : (
-                              <User className="size-3.5" />
-                            )}
-                          </div>
-                          <div className="flex flex-col">
-                            <span className="text-sm font-medium">
-                              {profile.username}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {profile.full_name ?? profile.email}
-                            </span>
-                          </div>
-                          <Check
-                            className={cn(
-                              "ml-auto size-4",
-                              selectedUser?.id === profile.id
-                                ? "opacity-100"
-                                : "opacity-0",
-                            )}
-                          />
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-          </div>
-
-          {/* Achievement selector */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium leading-none">
-              Achievement
-            </label>
-            <Popover
-              open={achievementOpen}
-              onOpenChange={setAchievementOpen}
-            >
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  role="combobox"
-                  aria-expanded={achievementOpen}
-                  className="justify-between"
-                >
-                  {selectedAchievement ? (
-                    <div className="flex items-center gap-2">
-                      <div className="size-6 rounded border bg-muted flex items-center justify-center text-muted-foreground/40 shrink-0">
-                        {selectedAchievement.badge_image_url ? (
-                          <img
-                            src={selectedAchievement.badge_image_url}
-                            alt=""
-                            className="size-6 rounded object-cover"
-                          />
-                        ) : (
-                          <ImageSquare className="size-3" />
-                        )}
-                      </div>
-                      <span className="text-sm">
-                        {selectedAchievement.name}
                       </span>
-                      <CategoryBadge
-                        category={selectedAchievement.category}
-                      />
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground text-sm">
-                      Search by name or slug...
+                    ) : (
+                      <span className="text-sm text-muted-foreground">
+                        Search by username or email
+                      </span>
+                    )}
+                    <CaretUpDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-(--radix-popover-trigger-width) min-w-[min(320px,calc(100vw-2rem))] p-0"
+                  align="start"
+                >
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      placeholder="Search users"
+                      value={searchQuery}
+                      onValueChange={handleUserSearch}
+                      className="h-11 text-base sm:h-10 sm:text-sm"
+                    />
+                    <CommandList>
+                      {searching && (
+                        <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                          Searching…
+                        </div>
+                      )}
+                      {!searching && users.length === 0 && searchQuery.length >= 2 && (
+                        <CommandEmpty>No users match that.</CommandEmpty>
+                      )}
+                      {!searching && searchQuery.length < 2 && (
+                        <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                          Type at least 2 characters to search.
+                        </div>
+                      )}
+                      <CommandGroup>
+                        {users.map((profile) => (
+                          <CommandItem
+                            key={profile.id}
+                            value={profile.id}
+                            className="min-h-11"
+                            onSelect={() => {
+                              setSelectedUser(profile)
+                              setUserOpen(false)
+                            }}
+                          >
+                            <UserAvatar profile={profile} size="md" />
+                            <span className="flex min-w-0 flex-col">
+                              <span className="truncate text-sm font-medium">
+                                {profile.username}
+                              </span>
+                              <span className="truncate text-xs text-muted-foreground">
+                                {profile.full_name ?? profile.email}
+                              </span>
+                            </span>
+                            <Check
+                              aria-hidden
+                              className={cn(
+                                "ml-auto size-4 shrink-0",
+                                selectedUser?.id === profile.id ? "opacity-100" : "opacity-0",
+                              )}
+                            />
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </Field>
+          </Step>
+
+          {/* 2 · Achievement */}
+          <Step n={2} id="step-achievement" title="Choose the achievement">
+            <Field
+              label="Achievement"
+              htmlFor="award-achievement"
+              error={achievementError}
+              hint={
+                selectedUser && selectedAchievement ? (
+                  duplicateStatus.kind === "checking" ? (
+                    "Checking whether they already have it…"
+                  ) : duplicateStatus.kind === "clean" ? (
+                    <span className="inline-flex items-center gap-1">
+                      <CheckCircle className="size-3.5 shrink-0 text-emerald-700" aria-hidden />
+                      {selectedUser.username} doesn’t have this yet.
+                    </span>
+                  ) : null
+                ) : null
+              }
+            >
+              <Popover open={achievementOpen} onOpenChange={setAchievementOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="award-achievement"
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={achievementOpen}
+                    aria-invalid={!!achievementError || undefined}
+                    aria-describedby={achievementError || (selectedUser && selectedAchievement) ? "award-achievement-hint" : undefined}
+                    className={TRIGGER}
+                  >
+                    {selectedAchievement ? (
+                      <span className="flex min-w-0 items-center gap-2">
+                        <BadgeThumb achievement={selectedAchievement} size="sm" />
+                        <span className="truncate text-sm">{selectedAchievement.name}</span>
+                        <CategoryBadge
+                          category={selectedAchievement.category}
+                          className="hidden sm:inline-flex"
+                        />
+                      </span>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">
+                        Search by name or slug
+                      </span>
+                    )}
+                    <CaretUpDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-(--radix-popover-trigger-width) min-w-[min(320px,calc(100vw-2rem))] p-0"
+                  align="start"
+                >
+                  <Command>
+                    <CommandInput
+                      placeholder="Search achievements"
+                      className="h-11 text-base sm:h-10 sm:text-sm"
+                    />
+                    <CommandList>
+                      <CommandEmpty>No achievements match that.</CommandEmpty>
+                      <CommandGroup>
+                        {initialAchievements.map((achievement) => (
+                          <CommandItem
+                            key={achievement.id}
+                            value={`${achievement.name} ${achievement.slug}`}
+                            className="min-h-11"
+                            onSelect={() => {
+                              setSelectedAchievement(achievement)
+                              setAchievementOpen(false)
+                            }}
+                          >
+                            <BadgeThumb achievement={achievement} size="md" />
+                            <span className="flex min-w-0 flex-1 flex-col">
+                              <span className="truncate text-sm font-medium">
+                                {achievement.name}
+                              </span>
+                              <span className="truncate font-mono text-xs text-muted-foreground">
+                                {achievement.slug}
+                              </span>
+                            </span>
+                            <CategoryBadge category={achievement.category} />
+                            <Check
+                              aria-hidden
+                              className={cn(
+                                "ml-2 size-4 shrink-0",
+                                selectedAchievement?.id === achievement.id
+                                  ? "opacity-100"
+                                  : "opacity-0",
+                              )}
+                            />
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </Field>
+
+            {/* What the chosen achievement is, so the admin can confirm it's the right one. */}
+            {selectedAchievement && (
+              <div className="flex flex-col gap-1 rounded-lg border bg-muted/40 px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium">{selectedAchievement.name}</span>
+                  <CategoryBadge category={selectedAchievement.category} />
+                  {selectedAchievement.is_limited_edition && (
+                    <span className="inline-flex items-center rounded-full border bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                      Limited edition
                     </span>
                   )}
-                  <CaretUpDown className="size-4 shrink-0 text-muted-foreground" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[400px] p-0" align="start">
-                <Command>
-                  <CommandInput placeholder="Search achievements..." />
-                  <CommandList>
-                    <CommandEmpty>
-                      No achievements found.
-                    </CommandEmpty>
-                    <CommandGroup>
-                      {initialAchievements.map((achievement) => (
-                        <CommandItem
-                          key={achievement.id}
-                          value={`${achievement.name} ${achievement.slug}`}
-                          onSelect={() => {
-                            setSelectedAchievement(achievement)
-                            setAchievementOpen(false)
-                          }}
-                        >
-                          <div className="size-7 rounded border bg-muted flex items-center justify-center text-muted-foreground/40 shrink-0">
-                            {achievement.badge_image_url ? (
-                              <img
-                                src={achievement.badge_image_url}
-                                alt=""
-                                className="size-7 rounded object-cover"
-                              />
-                            ) : (
-                              <ImageSquare className="size-3.5" />
-                            )}
-                          </div>
-                          <div className="flex flex-col flex-1 min-w-0">
-                            <span className="text-sm font-medium truncate">
-                              {achievement.name}
-                            </span>
-                            <span className="text-xs text-muted-foreground truncate font-mono">
-                              {achievement.slug}
-                            </span>
-                          </div>
-                          <CategoryBadge
-                            category={achievement.category}
-                          />
-                          <Check
-                            className={cn(
-                              "ml-2 size-4 shrink-0",
-                              selectedAchievement?.id === achievement.id
-                                ? "opacity-100"
-                                : "opacity-0",
-                            )}
-                          />
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-          </div>
-
-          {/* Selected achievement detail card */}
-          {selectedAchievement && (
-            <div className="rounded-lg border bg-muted/30 px-4 py-3 flex flex-col gap-1">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">
-                  {selectedAchievement.name}
-                </span>
-                <CategoryBadge category={selectedAchievement.category} />
+                </div>
+                {selectedAchievement.description && (
+                  <p className="text-[13px] text-muted-foreground">
+                    {selectedAchievement.description}
+                  </p>
+                )}
               </div>
-              <p className="text-xs text-muted-foreground">
-                {selectedAchievement.description}
-              </p>
-              {selectedAchievement.is_limited_edition && (
-                <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 uppercase tracking-wide">
-                  Limited Edition
-                </span>
-              )}
-            </div>
-          )}
+            )}
+          </Step>
 
-          {/* Duplicate check */}
-          {selectedUser && selectedAchievement && (
-            <div
-              className={cn(
-                "flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm",
-                duplicateStatus.kind === "clean"
-                  ? "border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950"
-                  : duplicateStatus.kind === "duplicate"
-                    ? "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950"
-                    : duplicateStatus.kind === "checking"
-                      ? "border-muted bg-muted/30"
-                      : "hidden",
-              )}
+          {/* 3 · Note and date */}
+          <Step
+            n={3}
+            id="step-note"
+            title="Add a note"
+            description="Say why, for whoever reads the history later."
+          >
+            <Field label="Note" htmlFor="award-note" optional>
+              <Textarea
+                id="award-note"
+                placeholder="Reason for the manual award"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                className="min-h-[88px] resize-none text-base sm:text-sm"
+              />
+            </Field>
+            <Field
+              label="Earned on"
+              htmlFor="award-earned-at"
+              error={earnedAtError}
+              hint="Defaults to now. Can’t be in the future."
             >
-              {duplicateStatus.kind === "checking" ? (
-                <span className="text-muted-foreground text-sm">
-                  Checking...
-                </span>
-              ) : duplicateStatus.kind === "clean" ? (
+              <Input
+                id="award-earned-at"
+                type="datetime-local"
+                value={earnedAt}
+                onChange={(e) => setEarnedAt(e.target.value)}
+                max={nowLocalISO()}
+                aria-invalid={!!earnedAtError || undefined}
+                aria-describedby="award-earned-at-hint"
+                className="h-11 text-base sm:h-9 sm:max-w-xs sm:text-sm"
+              />
+            </Field>
+          </Step>
+
+          {/* Summary + action */}
+          <div className="flex flex-col gap-4 border-t pt-6">
+            <p className="text-sm" aria-live="polite">
+              {selectedUser && selectedAchievement ? (
                 <>
-                  <CheckCircle className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-                  <span className="text-emerald-800 dark:text-emerald-200">
-                    Ready to award — this user does not yet have this
-                    achievement.
-                  </span>
+                  You’re awarding{" "}
+                  <span className="font-medium">{selectedAchievement.name}</span> to{" "}
+                  <span className="font-medium">{selectedUser.username}</span>.
                 </>
-              ) : duplicateStatus.kind === "duplicate" ? (
-                <>
-                  <WarningCircle className="size-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
-                  <span className="text-red-800 dark:text-red-200">
-                    Already earned — {selectedUser.username} earned{" "}
-                    {selectedAchievement.name} on{" "}
-                    {new Date(
-                      duplicateStatus.earnedAt,
-                    ).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                    . Awarding again is not possible.
-                  </span>
-                </>
-              ) : duplicateStatus.kind === "error" ? (
-                <span className="text-red-800 dark:text-red-200 text-sm">
-                  {duplicateStatus.message}
+              ) : (
+                <span className="text-muted-foreground">
+                  Choose a user and an achievement to continue.
                 </span>
-              ) : null}
+              )}
+            </p>
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center">
+              <Button
+                type="submit"
+                loading={saving}
+                loadingText="Awarding…"
+                aria-describedby={blocker && attempted ? "award-blocker" : undefined}
+                className="w-full sm:w-auto"
+              >
+                Award achievement
+              </Button>
+              {blocker && attempted && (
+                <p
+                  id="award-blocker"
+                  role="status"
+                  className={cn(
+                    "text-[13px]",
+                    duplicateStatus.kind === "checking" && selectedUser && selectedAchievement
+                      ? "text-muted-foreground"
+                      : "text-destructive",
+                  )}
+                >
+                  {blocker.message}
+                </p>
+              )}
             </div>
-          )}
-
-          {/* Note */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium leading-none">
-              Note{" "}
-              <span className="text-muted-foreground font-normal">
-                (optional)
-              </span>
-            </label>
-            <Textarea
-              placeholder="Reason for manual award..."
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              className="resize-none min-h-[60px]"
-            />
           </div>
-
-          {/* Earned At */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium leading-none">
-              Earned At
-            </label>
-            <Input
-              type="datetime-local"
-              value={earnedAt}
-              onChange={(e) => setEarnedAt(e.target.value)}
-              max={nowLocalISO()}
-            />
-          </div>
-
-          {/* Submit */}
-          <Button disabled={!canSubmit} onClick={handleSubmit}>
-            {saving ? "Awarding..." : "Award Achievement"}
-          </Button>
-        </CardContent>
-      </Card>
+        </form>
+      </div>
     </div>
   )
 }
