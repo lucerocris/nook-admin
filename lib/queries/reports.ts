@@ -219,7 +219,7 @@ export async function getReports(
     ),
     reviews!review_reports_review_id_fkey (
       id, rating, content, photo_urls, moderation_status, created_at, user_id,
-      reviewer:profiles!reviews_user_id_fkey (
+      profiles:profiles!reviews_user_id_fkey (
         id, full_name, username, avatar_url
       )
     )
@@ -298,7 +298,7 @@ export async function getReportById(id: string): Promise<ReportRow | null> {
     ),
     reviews!review_reports_review_id_fkey (
       id, rating, content, photo_urls, moderation_status, created_at, user_id,
-      reviewer:profiles!reviews_user_id_fkey (
+      profiles:profiles!reviews_user_id_fkey (
         id, full_name, username, avatar_url
       )
     )
