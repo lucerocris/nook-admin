@@ -2,6 +2,7 @@ import {
   ChatCircleTextIcon,
   ClipboardTextIcon,
   MapPinAreaIcon,
+  PaperPlaneTiltIcon,
   SquaresFourIcon,
   StorefrontIcon,
   TagIcon,
@@ -39,6 +40,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
     label: "Catalog",
     items: [
       { title: "Cafés", url: "/admin/cafes", icon: StorefrontIcon },
+      { title: "Outreach", url: "/admin/outreach", icon: PaperPlaneTiltIcon },
       { title: "Tags", url: "/admin/tags", icon: TagIcon },
       ...(FEATURES.crawls
         ? [{ title: "Crawls", url: "/admin/crawls", icon: MapPinAreaIcon }]
