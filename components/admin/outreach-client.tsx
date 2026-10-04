@@ -240,7 +240,7 @@ export function OutreachClient({ cafes, sender }: { cafes: OutreachCafe[]; sende
   )
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8">
       <PageHeader
         title="Outreach"
         summary={`${cafes.length} live cafés haven't claimed their page. Pick one, copy the message, send it from Nook's Instagram.`}
