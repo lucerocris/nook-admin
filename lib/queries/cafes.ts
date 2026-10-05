@@ -21,6 +21,8 @@ export type Cafe = {
   status: "draft" | "active" | "inactive"
   // Owner pressed "Submit for review" on the business dashboard.
   review_requested_at?: string | null
+  // What an admin asked the owner to fix when sending the draft back.
+  review_note?: string | null
   operating_hours: Record<string, {
     open: string; close: string; closed: boolean
   }> | null

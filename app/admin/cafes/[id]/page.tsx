@@ -15,7 +15,7 @@ import { getInviteForCafe, getOwnersForCafe } from "@/lib/queries/invites"
 import { CafeViewHeader } from "@/components/admin/cafe-view-header"
 import { CafeEditorForm } from "@/components/admin/cafe-editor-form"
 import { OwnerAccessCard } from "@/components/admin/owner-access-card"
-import { PublishRequestCard } from "@/components/admin/publish-request-card"
+import { PublishRequestCard, SentBackNote } from "@/components/admin/publish-request-card"
 import { Separator } from "@/components/ui/separator"
 
 interface ViewCafePageProps {
@@ -43,6 +43,9 @@ export default async function ViewCafePage({ params }: ViewCafePageProps) {
           cafeName={cafe.name}
           requestedAt={cafe.review_requested_at}
         />
+      )}
+      {cafe.status === "draft" && !cafe.review_requested_at && cafe.review_note && (
+        <SentBackNote note={cafe.review_note} />
       )}
       <CafeEditorForm
         mode="edit"
