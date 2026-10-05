@@ -5,6 +5,9 @@ interface CafeClaimApprovedEmailProps {
   cafeName: string;
   dashboardUrl: string;
   email: string;
+  // The owner added this cafe themselves: it's approved but still hidden, so
+  // the email has to say what's left before it goes live.
+  isNewListing?: boolean;
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -78,6 +81,7 @@ export const CafeClaimApprovedEmail = ({
   cafeName,
   dashboardUrl,
   email,
+  isNewListing = false,
 }: CafeClaimApprovedEmailProps) => {
   return (
     <html>
@@ -100,24 +104,52 @@ export const CafeClaimApprovedEmail = ({
           </div>
 
           {/* Badge */}
-          <div style={styles.badge}>🎉 Claim Approved</div>
+          <div style={styles.badge}>
+            {isNewListing ? "Verified" : "🎉 Claim Approved"}
+          </div>
 
           {/* Heading */}
-          <h2 style={styles.heading}>Your café claim has been approved</h2>
+          <h2 style={styles.heading}>
+            {isNewListing
+              ? `${cafeName} is verified. Next, set up its page`
+              : "Your café claim has been approved"}
+          </h2>
 
           {/* Intro */}
           <p style={styles.text}>
             Hi <strong>{ownerName}</strong>,
           </p>
-          <p style={styles.text}>
-            Great news — your claim for <strong>{cafeName}</strong> has been
-            approved. You can now manage your listing on Nook.
-          </p>
+          {isNewListing ? (
+            <>
+              <p style={styles.text}>
+                We&apos;ve confirmed <strong>{cafeName}</strong> is yours. It
+                isn&apos;t public on Nook yet: add a few things first, then send
+                it to us to publish.
+              </p>
+              <ol style={{ ...styles.text, paddingLeft: "20px" }}>
+                <li>Add a cover photo, your opening hours and a short description.</li>
+                <li>
+                  Optional but worth it: menu highlights and tags like Wi-Fi or
+                  outlets.
+                </li>
+                <li>
+                  Press <strong>Submit for review</strong> on your dashboard.
+                  We check it and publish it, usually within 2 working days,
+                  and email you when it&apos;s live.
+                </li>
+              </ol>
+            </>
+          ) : (
+            <p style={styles.text}>
+              Great news — your claim for <strong>{cafeName}</strong> has been
+              approved. You can now manage your listing on Nook.
+            </p>
+          )}
 
           {/* CTA */}
           <div style={styles.ctaWrapper}>
             <a href={dashboardUrl} style={styles.cta}>
-              Go to your dashboard
+              {isNewListing ? "Set up your page" : "Go to your dashboard"}
             </a>
           </div>
 
@@ -129,12 +161,15 @@ export const CafeClaimApprovedEmail = ({
 
           {/* Footer */}
           <p style={styles.footer}>
-            Questions? Just reply to this email.
+            Questions? Message us on Instagram at @nook_cafefinder.
             <br />
             — The Nook Team
           </p>
           <p style={styles.footer}>
-            This email was sent to {email} because your café claim was approved.
+            This email was sent to {email} because{" "}
+            {isNewListing
+              ? "the café you added to Nook was verified."
+              : "your café claim was approved."}
           </p>
         </div>
       </body>

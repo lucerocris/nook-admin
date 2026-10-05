@@ -144,7 +144,7 @@ export async function approveClaimAction(claimId: string) {
 
     const { data: claim, error: claimError } = await supabase
       .from("cafe_claims")
-      .select("id, cafe_id, claimant_id, role, status")
+      .select("id, cafe_id, claimant_id, role, status, is_new_listing")
       .eq("id", claimId)
       .single();
 
@@ -289,13 +289,16 @@ export async function approveClaimAction(claimId: string) {
         const { data: emailData, error: emailError } = await resend.emails.send({
           from: MAIL_FROM,
           to: [ownerProfile.email],
-          subject: `Your claim for ${cafeData.name} has been approved!`,
+          subject: claim.is_new_listing
+            ? `${cafeData.name} is verified: set up its page to go live`
+            : `Your claim for ${cafeData.name} has been approved!`,
           react: (
             <CafeClaimApprovedEmail
               ownerName={ownerProfile.full_name ?? "there"}
               cafeName={cafeData.name}
               dashboardUrl={dashboardUrl}
               email={ownerProfile.email}
+              isNewListing={claim.is_new_listing === true}
             />
           ),
         });

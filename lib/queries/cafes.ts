@@ -47,13 +47,18 @@ type CafeListFilters = {
 function applyCafeListFilters<T extends {
   eq: (column: string, value: unknown) => T
   ilike: (column: string, pattern: string) => T
+  not: (column: string, operator: string, value: unknown) => T
 }>(
   query: T,
   filters?: CafeListFilters
 ) {
   let next = query
 
-  if (filters?.status && filters?.status !== "all") {
+  // "to_publish": drafts whose owner pressed Submit for review. Without a list
+  // of them the only way to find one was the alert email.
+  if (filters?.status === "to_publish") {
+    next = next.eq("status", "draft").not("review_requested_at", "is", null)
+  } else if (filters?.status && filters?.status !== "all") {
     next = next.eq("status", filters.status)
   }
 
@@ -239,6 +244,7 @@ export async function getCafesPage(filters?: CafeListFilters & {
       city,
       featured_image_url,
       status,
+      review_requested_at,
       rating,
       is_featured,
       created_at,
@@ -380,17 +386,19 @@ export async function getCafeStatusCounts() {
     if (status) q = q.eq("status", status)
     return q
   }
-  const [all, active, draft, inactive] = await Promise.all([
+  const [all, active, draft, inactive, toPublish] = await Promise.all([
     count(),
     count("active"),
     count("draft"),
     count("inactive"),
+    count("draft").not("review_requested_at", "is", null),
   ])
-  for (const r of [all, active, draft, inactive]) if (r.error) throw r.error
+  for (const r of [all, active, draft, inactive, toPublish]) if (r.error) throw r.error
   return {
     all: all.count ?? 0,
     active: active.count ?? 0,
     draft: draft.count ?? 0,
     inactive: inactive.count ?? 0,
+    toPublish: toPublish.count ?? 0,
   }
 }

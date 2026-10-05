@@ -65,7 +65,22 @@ import { type Cafe } from "@/lib/queries/cafes"
 
 type CafeRow = Cafe & { cafe_owner_cafe: { owner_id: string }[] | null }
 type TagOption = { id: string; name: string; category: string }
-type StatusCounts = { all: number; active: number; draft: number; inactive: number }
+type StatusCounts = {
+  all: number
+  active: number
+  draft: number
+  inactive: number
+  toPublish: number
+}
+
+// A draft the owner has sent for review reads differently from one still
+// being set up: it's waiting on us.
+function statusOf(cafe: CafeRow) {
+  if (cafe.status === "draft" && cafe.review_requested_at) {
+    return { label: "Ready to publish", tone: "info" as Tone }
+  }
+  return STATUS[cafe.status]
+}
 
 const STATUS: Record<Cafe["status"], { label: string; tone: Tone }> = {
   active: { label: "Active", tone: "success" },
@@ -308,6 +323,7 @@ export function CafeListClient({
           { value: "all", label: "All", count: statusCounts.all },
           { value: "active", label: "Active", count: statusCounts.active },
           { value: "draft", label: "Draft", count: statusCounts.draft },
+          { value: "to_publish", label: "To publish", count: statusCounts.toPublish },
           { value: "inactive", label: "Inactive", count: statusCounts.inactive },
         ]}
       />
@@ -432,7 +448,7 @@ export function CafeListClient({
                       </div>
                     </TableCell>
                     <TableCell className={TD}>
-                      <StatusChip tone={STATUS[cafe.status].tone}>{STATUS[cafe.status].label}</StatusChip>
+                      <StatusChip tone={statusOf(cafe).tone}>{statusOf(cafe).label}</StatusChip>
                     </TableCell>
                     <TableCell className={TD}>
                       <OwnerChip claimed={claimed} />
@@ -470,7 +486,7 @@ export function CafeListClient({
                 </Link>
                 <p className="truncate text-xs text-muted-foreground">{area || "No area set"}</p>
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
-                  <StatusChip tone={STATUS[cafe.status].tone}>{STATUS[cafe.status].label}</StatusChip>
+                  <StatusChip tone={statusOf(cafe).tone}>{statusOf(cafe).label}</StatusChip>
                   <OwnerChip claimed={claimed} />
                   <Rating cafe={cafe} />
                 </div>
