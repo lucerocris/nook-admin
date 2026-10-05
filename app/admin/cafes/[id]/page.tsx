@@ -15,6 +15,7 @@ import { getInviteForCafe, getOwnersForCafe } from "@/lib/queries/invites"
 import { CafeViewHeader } from "@/components/admin/cafe-view-header"
 import { CafeEditorForm } from "@/components/admin/cafe-editor-form"
 import { OwnerAccessCard } from "@/components/admin/owner-access-card"
+import { PublishRequestCard } from "@/components/admin/publish-request-card"
 import { Separator } from "@/components/ui/separator"
 
 interface ViewCafePageProps {
@@ -36,6 +37,13 @@ export default async function ViewCafePage({ params }: ViewCafePageProps) {
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
       <CafeViewHeader cafeId={id} cafeName={cafe.name} />
+      {cafe.status === "draft" && cafe.review_requested_at && (
+        <PublishRequestCard
+          cafeId={id}
+          cafeName={cafe.name}
+          requestedAt={cafe.review_requested_at}
+        />
+      )}
       <CafeEditorForm
         mode="edit"
         cafe={cafe}

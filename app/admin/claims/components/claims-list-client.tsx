@@ -85,6 +85,10 @@ export type ClaimRow = {
   verification_code: string | null;
   created_at: string;
   role: string | null;
+  // The claimant added this cafe themselves (business /claim/new); it's a
+  // hidden draft until published.
+  is_new_listing: boolean;
+  instagram_handle: string | null;
   cafes: {
     id: string;
     name: string;
@@ -334,9 +338,26 @@ function ClaimActions({
             <AlertDialogDescription>
               {isReject
                 ? "Let the claimant know why this request was rejected. They’ll get your reason by email."
-                : `${claimantLabel(claim)} gets owner access to ${cafeName}.`}
+                : claim.is_new_listing
+                  ? `${claimantLabel(claim)} gets owner access to ${cafeName}. It stays hidden until they submit it and you publish it from its café page.`
+                  : `${claimantLabel(claim)} gets owner access to ${cafeName}.`}
+              {isReject && claim.is_new_listing &&
+                " The draft café they added is hidden (set to inactive)."}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {claim.instagram_handle && (
+            <p className="text-sm">
+              <span className="text-muted-foreground">Instagram </span>
+              <a
+                href={`https://www.instagram.com/${claim.instagram_handle}/`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium underline underline-offset-2"
+              >
+                @{claim.instagram_handle}
+              </a>
+            </p>
+          )}
           {claim.verification_code && (
             <p className="text-sm">
               <span className="text-muted-foreground">Verification code </span>
@@ -529,12 +550,19 @@ export function ClaimsListClient({
                     <div className="flex items-center gap-3">
                       <Thumb src={claim.cafes?.featured_image_url} />
                       <div className="grid min-w-0 leading-tight">
-                        <Link
-                          href={`/admin/cafes/${claim.cafe_id}`}
-                          className="truncate font-medium outline-hidden hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          {claim.cafes?.name ?? "Unknown café"}
-                        </Link>
+                        <span className="flex min-w-0 items-center gap-2">
+                          <Link
+                            href={`/admin/cafes/${claim.cafe_id}`}
+                            className="truncate font-medium outline-hidden hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {claim.cafes?.name ?? "Unknown café"}
+                          </Link>
+                          {claim.is_new_listing && (
+                            <StatusChip tone="info" className="shrink-0">
+                              New listing
+                            </StatusChip>
+                          )}
+                        </span>
                         <ClaimantLine claim={claim} />
                       </div>
                     </div>
@@ -579,6 +607,11 @@ export function ClaimsListClient({
                 >
                   {claim.cafes?.name ?? "Unknown café"}
                 </Link>
+                {claim.is_new_listing && (
+                  <StatusChip tone="info" className="shrink-0">
+                    New listing
+                  </StatusChip>
+                )}
                 <StatusChip
                   tone={STATUS[claim.status].tone}
                   className="shrink-0"

@@ -19,6 +19,8 @@ export type Cafe = {
   is_new: boolean
   is_featured: boolean
   status: "draft" | "active" | "inactive"
+  // Owner pressed "Submit for review" on the business dashboard.
+  review_requested_at?: string | null
   operating_hours: Record<string, {
     open: string; close: string; closed: boolean
   }> | null

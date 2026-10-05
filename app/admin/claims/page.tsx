@@ -142,6 +142,8 @@ export default async function ClaimsPage({
       verification_code,
       created_at,
       role,
+      is_new_listing,
+      instagram_handle,
       cafes!inner ( id, name, address, neighborhood, city, featured_image_url ),
       profiles ( id, full_name, email, avatar_url )
     `,

@@ -352,9 +352,23 @@ export async function rejectClaimAction(
 
     const { data: claim } = await supabase
       .from("cafe_claims")
-      .select("cafe_id, claimant_id")
+      .select("cafe_id, claimant_id, is_new_listing")
       .eq("id", claimId)
       .single();
+
+    // A rejected new listing leaves the draft cafe the claimant created. It
+    // can't be deleted (cafe_claims.cafe_id references it, with no cascade),
+    // so it's parked as inactive: out of the drafts list, kept for the record.
+    if (claim?.is_new_listing) {
+      const { error: hideError } = await supabase
+        .from("cafes")
+        .update({ status: "inactive" })
+        .eq("id", claim.cafe_id)
+        .eq("status", "draft");
+      if (hideError) {
+        console.error("[REJECT] Failed to hide new-listing draft", hideError);
+      }
+    }
 
     if (claim) {
       const [{ data: ownerProfile }, { data: cafeData }] = await Promise.all([
