@@ -1,4 +1,5 @@
 import {
+  ChartLineUpIcon,
   ChatCircleTextIcon,
   ClipboardTextIcon,
   MapPinAreaIcon,
@@ -27,7 +28,10 @@ export type AdminNavGroup = { label?: string; items: AdminNavItem[] }
 // who's on the platform.
 export const ADMIN_NAV: AdminNavGroup[] = [
   {
-    items: [{ title: "Dashboard", url: "/admin/dashboard", icon: SquaresFourIcon }],
+    items: [
+      { title: "Dashboard", url: "/admin/dashboard", icon: SquaresFourIcon },
+      { title: "Growth", url: "/admin/growth", icon: ChartLineUpIcon },
+    ],
   },
   {
     label: "Queues",
