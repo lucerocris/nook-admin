@@ -2,6 +2,7 @@ import {
   ChartLineUpIcon,
   ChatCircleTextIcon,
   ClipboardTextIcon,
+  ImagesIcon,
   MapPinAreaIcon,
   PaperPlaneTiltIcon,
   SquaresFourIcon,
@@ -17,7 +18,7 @@ export type AdminNavItem = {
   url: string
   icon: React.ElementType
   /** Which pending count, if any, shows as a badge on the item. */
-  badge?: "claims" | "reports"
+  badge?: "claims" | "reports" | "photos"
 }
 
 export type AdminNavGroup = { label?: string; items: AdminNavItem[] }
@@ -38,6 +39,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
     items: [
       { title: "Claims", url: "/admin/claims", icon: ClipboardTextIcon, badge: "claims" },
       { title: "Review reports", url: "/admin/reviews", icon: ChatCircleTextIcon, badge: "reports" },
+      { title: "Gallery photos", url: "/admin/gallery", icon: ImagesIcon, badge: "photos" },
     ],
   },
   {

@@ -11,7 +11,7 @@ export type QueueItem = {
 }
 
 export type QueuePreview = {
-  key: "claims" | "reports" | "drafts" | "unclaimed"
+  key: "claims" | "reports" | "photos" | "drafts" | "unclaimed"
   count: number
   items: QueueItem[]
 }
@@ -29,11 +29,12 @@ function one<T>(value: T | T[] | null | undefined): T | null {
 export async function getQueuePreviews(counts: {
   pendingClaims: number
   pendingReports: number
+  reportedPhotos: number
   unclaimed: number
 }): Promise<QueuePreview[]> {
   const supabase = createAdminClient()
 
-  const [claims, reports, drafts, unclaimed] = await Promise.all([
+  const [claims, reports, photoReports, drafts, unclaimed] = await Promise.all([
     supabase
       .from("cafe_claims")
       .select(
@@ -50,12 +51,44 @@ export async function getQueuePreviews(counts: {
       .eq("status", "pending")
       .order("created_at", { ascending: false })
       .limit(PREVIEW),
+    // Newest open photo reports; deduped to photos below, so over-fetch.
+    supabase
+      .from("photo_reports")
+      .select(
+        "photo_id, created_at, user_photos!photo_reports_photo_id_fkey ( image_url, drink_name, caption, cafes ( name ) )"
+      )
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(PREVIEW * 5),
     getCafesPage({ status: "draft", pageSize: PREVIEW }),
     getCafesPage({ owner: "unclaimed", pageSize: PREVIEW }),
   ])
 
   if (claims.error) throw claims.error
   if (reports.error) throw reports.error
+  if (photoReports.error) throw photoReports.error
+
+  const seenPhotos = new Set<string>()
+  const photoItems: QueueItem[] = []
+  for (const row of photoReports.data ?? []) {
+    const id = row.photo_id as string
+    if (seenPhotos.has(id) || photoItems.length >= PREVIEW) continue
+    seenPhotos.add(id)
+    const photo = one<{
+      image_url: string
+      drink_name: string | null
+      caption: string | null
+      cafes: { name: string } | { name: string }[] | null
+    }>(row.user_photos)
+    photoItems.push({
+      id,
+      title: photo?.drink_name || (photo?.caption ? `“${photo.caption}”` : "Gallery photo"),
+      meta: one(photo?.cafes)?.name ?? null,
+      createdAt: row.created_at as string,
+      href: `/admin/gallery/${id}`,
+      imageUrl: photo?.image_url ?? null,
+    })
+  }
 
   return [
     {
@@ -93,6 +126,11 @@ export async function getQueuePreviews(counts: {
       }),
     },
     {
+      key: "photos",
+      count: counts.reportedPhotos,
+      items: photoItems,
+    },
+    {
       key: "drafts",
       count: drafts.total,
       items: drafts.cafes.map((cafe) => ({
@@ -119,20 +157,25 @@ export async function getQueuePreviews(counts: {
   ]
 }
 
-const NOUNS = { claims: ["claim", "claims"], reports: ["report", "reports"] } as const
+const NOUNS = {
+  claims: ["claim", "claims"],
+  reports: ["report", "reports"],
+  photos: ["reported photo", "reported photos"],
+} as const
 
 /** "3 claims and 2 reports are waiting." Counts only the queues that are
  *  decisions (claims, reports); drafts and unclaimed are standing work. Lives
  *  here, not in the client component, so the server page can call it. */
 export function waitingSentence(queues: QueuePreview[]) {
   const decisions = queues.filter(
-    (q): q is QueuePreview & { key: "claims" | "reports" } =>
-      (q.key === "claims" || q.key === "reports") && q.count > 0
+    (q): q is QueuePreview & { key: "claims" | "reports" | "photos" } =>
+      (q.key === "claims" || q.key === "reports" || q.key === "photos") && q.count > 0
   )
   if (decisions.length === 0) return "No claims or reports are waiting."
   const parts = decisions.map(
     (q) => `${q.count.toLocaleString()} ${NOUNS[q.key][q.count === 1 ? 0 : 1]}`
   )
   const total = decisions.reduce((n, q) => n + q.count, 0)
-  return `${parts.join(" and ")} ${total === 1 ? "is" : "are"} waiting.`
+  const list = parts.length > 2 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts.join(" and ")
+  return `${list} ${total === 1 ? "is" : "are"} waiting.`
 }

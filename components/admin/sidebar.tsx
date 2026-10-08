@@ -46,12 +46,14 @@ function initials(label: string) {
 export function AdminSidebar({
   pendingClaimsCount = 0,
   pendingReportsCount = 0,
+  reportedPhotosCount = 0,
   account,
   onOpenJump,
   ...props
 }: React.ComponentProps<typeof Sidebar> & {
   pendingClaimsCount?: number
   pendingReportsCount?: number
+  reportedPhotosCount?: number
   account: { name: string | null; email: string | null }
   onOpenJump: () => void
 }) {
@@ -61,7 +63,7 @@ export function AdminSidebar({
   const { isMobile, setOpenMobile } = useSidebar()
   const [isLoggingOut, setIsLoggingOut] = React.useState(false)
 
-  const badges = { claims: pendingClaimsCount, reports: pendingReportsCount }
+  const badges = { claims: pendingClaimsCount, reports: pendingReportsCount, photos: reportedPhotosCount }
 
   // On mobile the sidebar is an overlay drawer. Navigating is a client-side
   // transition that doesn't unmount it, so without this the drawer stayed open

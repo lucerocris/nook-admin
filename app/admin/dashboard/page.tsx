@@ -4,6 +4,7 @@ import { RecentActivity } from "@/components/admin/recent-activity"
 import { WaitingOnYou } from "@/components/admin/dashboard/waiting-on-you"
 import { getAdminDashboardSummary } from "@/lib/queries/dashboard"
 import { getQueuePreviews, waitingSentence } from "@/lib/queries/dashboard-queues"
+import { getGalleryCounts } from "@/lib/queries/gallery"
 import { createClient } from "@/lib/supabase/server"
 
 export const metadata: Metadata = { title: "Dashboard" }
@@ -26,13 +27,15 @@ function greeting() {
 export default async function DashboardPage() {
   const supabase = await createClient()
   // Request-cached: the layout already fetched this summary for the sidebar.
-  const [summary, { data: { user } }] = await Promise.all([
+  const [summary, gallery, { data: { user } }] = await Promise.all([
     getAdminDashboardSummary(),
+    getGalleryCounts(),
     supabase.auth.getUser(),
   ])
   const queues = await getQueuePreviews({
     pendingClaims: summary.claims.by_status.pending ?? 0,
     pendingReports: summary.reports.by_status.pending ?? 0,
+    reportedPhotos: gallery.reported,
     unclaimed: summary.cafes.unclaimed,
   })
 

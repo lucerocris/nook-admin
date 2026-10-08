@@ -19,11 +19,13 @@ import { ADMIN_NAV } from "@/components/admin/nav"
 export function AdminShell({
   pendingClaimsCount,
   pendingReportsCount,
+  reportedPhotosCount,
   account,
   children,
 }: {
   pendingClaimsCount: number
   pendingReportsCount: number
+  reportedPhotosCount: number
   account: { name: string | null; email: string | null }
   children: React.ReactNode
 }) {
@@ -46,6 +48,7 @@ export function AdminShell({
       <AdminSidebar
         pendingClaimsCount={pendingClaimsCount}
         pendingReportsCount={pendingReportsCount}
+        reportedPhotosCount={reportedPhotosCount}
         account={account}
         onOpenJump={() => setJumpOpen(true)}
       />

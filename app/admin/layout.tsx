@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { AdminShell } from "@/components/admin/shell"
 import { getAdminDashboardSummary } from "@/lib/queries/dashboard"
+import { getGalleryCounts } from "@/lib/queries/gallery"
 import { createClient } from "@/lib/supabase/server"
 
 export const metadata: Metadata = {
@@ -19,8 +20,11 @@ export default async function AdminLayout({
   // be a claims count plus getReportsMetrics()' three counts, on every admin
   // page, with the dashboard page then repeating the latter three.
   const supabase = await createClient()
-  const [summary, { data: { user } }] = await Promise.all([
+  // Reported gallery photos come from their own request-cached counts (the
+  // summary RPC predates the gallery).
+  const [summary, gallery, { data: { user } }] = await Promise.all([
     getAdminDashboardSummary(),
+    getGalleryCounts(),
     supabase.auth.getUser(),
   ])
 
@@ -28,6 +32,7 @@ export default async function AdminLayout({
     <AdminShell
       pendingClaimsCount={summary.claims.by_status.pending ?? 0}
       pendingReportsCount={summary.reports.by_status.pending ?? 0}
+      reportedPhotosCount={gallery.reported}
       account={{
         name: (user?.user_metadata?.full_name as string | undefined) ?? null,
         email: user?.email ?? null,

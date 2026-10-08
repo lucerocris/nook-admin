@@ -6,6 +6,7 @@ import {
   ChatCircleTextIcon,
   CheckCircleIcon,
   ClipboardTextIcon,
+  ImagesIcon,
   PencilSimpleLineIcon,
   StorefrontIcon,
 } from "@phosphor-icons/react"
@@ -28,6 +29,12 @@ const QUEUES: Record<
     label: "Review reports",
     icon: ChatCircleTextIcon,
     href: "/admin/reviews?status=pending&sort=oldest",
+    cta: "Open queue",
+  },
+  photos: {
+    label: "Reported gallery photos",
+    icon: ImagesIcon,
+    href: "/admin/gallery",
     cta: "Open queue",
   },
   drafts: {
@@ -122,7 +129,7 @@ export function WaitingOnYou({ queues }: { queues: QueuePreview[] }) {
           <CheckCircleIcon className="size-6 text-emerald-600" aria-hidden />
           <p className="mt-2 text-sm font-semibold">Nothing waiting</p>
           <p className="mt-1 text-[13px] text-muted-foreground">
-            No claims, reports, drafts or unclaimed listings need you right now.
+            No claims, reports, photos, drafts or unclaimed listings need you right now.
           </p>
         </div>
       ) : (
