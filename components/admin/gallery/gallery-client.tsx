@@ -28,6 +28,7 @@ import {
   PhotoStatusChips,
   handle,
   photoTitle,
+  titleIsCafe,
   usePhotoModeration,
 } from "@/components/admin/gallery/photo-moderation"
 import {
@@ -102,7 +103,9 @@ function PhotoName({ photo }: { photo: GalleryPhoto }) {
         </span>
       )}
       <span className="mt-0.5 truncate text-xs text-muted-foreground">
-        {photo.cafe.name} · {handle(photo.owner)}
+        {titleIsCafe(photo)
+          ? `${handle(photo.owner)} · ${PHOTO_SOURCE_LABELS[photo.source].toLowerCase()} photo`
+          : `${photo.cafe.name} · ${handle(photo.owner)}`}
         {photo.owner.is_suspended && " (suspended)"}
       </span>
     </div>
@@ -144,16 +147,18 @@ function Age({ iso }: { iso: string }) {
 function QueueActions({
   photo,
   compact,
+  hideOpen,
   busy,
   ask,
 }: {
   photo: ReportedPhoto
   compact?: boolean
+  hideOpen?: boolean
   busy: boolean
   ask: ReturnType<typeof usePhotoModeration>["ask"]
 }) {
   return (
-    <div className="flex items-center justify-end gap-1">
+    <div className={cn("flex items-center gap-1", !hideOpen && "justify-end")}>
       <Button
         variant="ghost"
         size={compact ? "icon-sm" : "sm"}
@@ -178,7 +183,7 @@ function QueueActions({
           {!compact && "Remove"}
         </Button>
       )}
-      <OpenLink photo={photo} />
+      {!hideOpen && <OpenLink photo={photo} />}
     </div>
   )
 }
@@ -290,13 +295,14 @@ export function GalleryClient({
     }
   }
 
-  const reportedTable = (
+  // Built only for the view on screen: the other assumes the other row shape.
+  const reportedTable = () => (
     <Table>
       <TableHeader>
         <TableRow className="border-b hover:bg-transparent">
           <TableHead className={TH}>Photo</TableHead>
           <TableHead className={TH}>Reports</TableHead>
-          <TableHead className={`${TH} text-right`}>Last report</TableHead>
+          <TableHead className={`${TH} text-right`}>Waiting</TableHead>
           <TableHead className={`${TH} w-px`}>
             <span className="sr-only">Actions</span>
           </TableHead>
@@ -329,7 +335,7 @@ export function GalleryClient({
               </div>
             </TableCell>
             <TableCell className={`${TD} text-right text-muted-foreground`}>
-              <Age iso={photo.last_reported_at} />
+              <Age iso={photo.first_reported_at} />
             </TableCell>
             <TableCell className={`${TD} text-right`}>
               <QueueActions photo={photo} ask={ask} busy={busyPhotoId === photo.id} />
@@ -340,7 +346,7 @@ export function GalleryClient({
     </Table>
   )
 
-  const browseTable = (
+  const browseTable = () => (
     <Table>
       <TableHeader>
         <TableRow className="border-b hover:bg-transparent">
@@ -384,15 +390,22 @@ export function GalleryClient({
       <div className="min-w-0 flex-1">
         <PhotoName photo={photo} />
         {reportedView ? (
-          <p className="mt-1 truncate text-xs">
-            <span className="font-medium tabular-nums">{photo.open_reports}</span>
-            <span className="text-muted-foreground"> · </span>
-            {reasonsLine(photo as ReportedPhoto)}
-            <span className="text-muted-foreground">
-              {" · "}
-              <Age iso={(photo as ReportedPhoto).last_reported_at} />
-            </span>
-          </p>
+          <>
+            <p className="mt-1 truncate text-xs">
+              <span className="font-medium tabular-nums">{photo.open_reports}</span>
+              <span className="text-muted-foreground"> · </span>
+              {reasonsLine(photo as ReportedPhoto)}
+              <span className="text-muted-foreground">
+                {" · "}
+                <Age iso={(photo as ReportedPhoto).first_reported_at} />
+              </span>
+            </p>
+            {/* Labelled buttons on their own line: icon-only ones squeezed
+                the title to a few letters at phone width. */}
+            <div className="-ml-3 mt-1">
+              <QueueActions photo={photo as ReportedPhoto} ask={ask} busy={busyPhotoId === photo.id} hideOpen />
+            </div>
+          </>
         ) : (
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             <PhotoStatusChips photo={photo} />
@@ -402,7 +415,7 @@ export function GalleryClient({
           </div>
         )}
       </div>
-      {reportedView ? <QueueActions photo={photo as ReportedPhoto} compact ask={ask} busy={busyPhotoId === photo.id} /> : <OpenLink photo={photo} />}
+      <OpenLink photo={photo} />
     </li>
   ))
 
@@ -460,7 +473,7 @@ export function GalleryClient({
       <TableCard
         busy={url.isPending}
         empty={empty}
-        table={reportedView ? reportedTable : browseTable}
+        table={reportedView ? reportedTable() : browseTable()}
         list={list}
         footer={
           <TableFooter

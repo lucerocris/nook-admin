@@ -44,6 +44,11 @@ export function photoTitle(photo: Pick<GalleryPhoto, "drink_name" | "caption" | 
   return `Photo at ${photo.cafe.name}`
 }
 
+/** True when photoTitle() fell back to the café, so rows don't repeat it. */
+export function titleIsCafe(photo: Pick<GalleryPhoto, "drink_name" | "caption">) {
+  return !photo.drink_name && !photo.caption
+}
+
 export function PhotoStatusChips({
   photo,
   showOpenReports = true,

@@ -18,6 +18,7 @@ import {
   PhotoStatusChips,
   handle,
   photoTitle,
+  titleIsCafe,
   usePhotoModeration,
 } from "@/components/admin/gallery/photo-moderation"
 import {
@@ -115,6 +116,33 @@ export function PhotoDetailsClient({ photo }: { photo: PhotoDetail }) {
         ? `No open reports. ${handle(owner)} has hidden it from their profile.`
         : `No open reports. It shows on ${handle(owner)}’s profile.`
 
+  const decision = (
+    <RailSection title="Decision">
+      <p className="text-sm text-muted-foreground" aria-live="polite">
+        {decisionLine}
+      </p>
+      <div className="mt-3 flex flex-col gap-2">
+        {removed ? (
+          <Button variant="outline" disabled={busy} onClick={() => ask("restore", photo)}>
+            <ArrowCounterClockwiseIcon aria-hidden />
+            Restore photo
+          </Button>
+        ) : (
+          <Button variant="destructive" disabled={busy} onClick={() => ask("remove", photo)}>
+            <TrashIcon aria-hidden />
+            Remove photo
+          </Button>
+        )}
+        {openReports.length > 0 && (
+          <Button variant="outline" disabled={busy} onClick={() => ask("dismiss", photo)}>
+            <CheckIcon aria-hidden />
+            {openReports.length === 1 ? "Dismiss report" : `Dismiss ${openReports.length} reports`}
+          </Button>
+        )}
+      </div>
+    </RailSection>
+  )
+
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
       <header className="flex items-start gap-3">
@@ -126,11 +154,15 @@ export function PhotoDetailsClient({ photo }: { photo: PhotoDetail }) {
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight text-balance">{photoTitle(photo)}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {handle(owner)} at {photo.cafe.name} · posted <When iso={photo.created_at} />
+            {handle(owner)}
+            {!titleIsCafe(photo) && <> at {photo.cafe.name}</>} · posted <When iso={photo.created_at} />
           </p>
           <PhotoStatusChips photo={photo} className="mt-2.5 flex flex-wrap gap-1.5" />
         </div>
       </header>
+
+      {/* On phones the decision sits under the title, not below the history. */}
+      <div className="overflow-hidden rounded-xl border bg-card lg:hidden">{decision}</div>
 
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="flex min-w-0 flex-col gap-6">
@@ -183,7 +215,7 @@ export function PhotoDetailsClient({ photo }: { photo: PhotoDetail }) {
                   </span>
                 )}
               </Fact>
-              <Fact label="Taken">{formatDate(photo.taken_at)}</Fact>
+              {photo.taken_at !== photo.created_at && <Fact label="Taken">{formatDate(photo.taken_at)}</Fact>}
               <Fact label="Posted">{formatDate(photo.created_at)}</Fact>
               {photo.pin_order && <Fact label="Pinned">Slot {photo.pin_order} of 3 on the profile</Fact>}
             </dl>
@@ -244,30 +276,7 @@ export function PhotoDetailsClient({ photo }: { photo: PhotoDetail }) {
 
         {/* Rail: the decision first, then who and where. */}
         <aside className="overflow-hidden rounded-xl border bg-card lg:sticky lg:top-4">
-          <RailSection title="Decision">
-            <p className="text-sm text-muted-foreground" aria-live="polite">
-              {decisionLine}
-            </p>
-            <div className="mt-3 flex flex-col gap-2">
-              {removed ? (
-                <Button variant="outline" disabled={busy} onClick={() => ask("restore", photo)}>
-                  <ArrowCounterClockwiseIcon aria-hidden />
-                  Restore photo
-                </Button>
-              ) : (
-                <Button variant="destructive" disabled={busy} onClick={() => ask("remove", photo)}>
-                  <TrashIcon aria-hidden />
-                  Remove photo
-                </Button>
-              )}
-              {openReports.length > 0 && (
-                <Button variant="outline" disabled={busy} onClick={() => ask("dismiss", photo)}>
-                  <CheckIcon aria-hidden />
-                  {openReports.length === 1 ? "Dismiss report" : `Dismiss ${openReports.length} reports`}
-                </Button>
-              )}
-            </div>
-          </RailSection>
+          <div className="hidden border-b lg:block">{decision}</div>
 
           <RailSection title="Owner">
             <p className="text-sm">
