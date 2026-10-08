@@ -259,7 +259,9 @@ export async function approveClaimAction(claimId: string) {
       return { success: false as const, error: "Failed to update cafe" };
     }
 
-    const { data: ownerProfile } = await supabase
+    // Service role: signed-in users (superadmins included) have no SELECT on
+    // profiles.email.
+    const { data: ownerProfile } = await supabaseAdmin
       .from("profiles")
       .select("full_name, email")
       .eq("id", claim.claimant_id)
@@ -374,8 +376,10 @@ export async function rejectClaimAction(
     }
 
     if (claim) {
+      // Service role: signed-in users (superadmins included) have no SELECT
+      // on profiles.email.
       const [{ data: ownerProfile }, { data: cafeData }] = await Promise.all([
-        supabase
+        createAdminClient()
           .from("profiles")
           .select("full_name, email")
           .eq("id", claim.claimant_id)
