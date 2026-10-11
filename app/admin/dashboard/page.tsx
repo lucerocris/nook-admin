@@ -5,6 +5,7 @@ import { WaitingOnYou } from "@/components/admin/dashboard/waiting-on-you"
 import { getAdminDashboardSummary } from "@/lib/queries/dashboard"
 import { getQueuePreviews, waitingSentence } from "@/lib/queries/dashboard-queues"
 import { getGalleryCounts } from "@/lib/queries/gallery"
+import { countImportDrafts } from "@/lib/queries/imports"
 import { createClient } from "@/lib/supabase/server"
 
 export const metadata: Metadata = { title: "Dashboard" }
@@ -27,16 +28,19 @@ function greeting() {
 export default async function DashboardPage() {
   const supabase = await createClient()
   // Request-cached: the layout already fetched this summary for the sidebar.
-  const [summary, gallery, { data: { user } }] = await Promise.all([
+  const [summary, gallery, importDrafts, { data: { user } }] = await Promise.all([
     getAdminDashboardSummary(),
     getGalleryCounts(),
+    // Imported cafés still in review are counted on the Imports page, not as
+    // unclaimed cafés or listings here (they're never owned while drafts).
+    countImportDrafts(),
     supabase.auth.getUser(),
   ])
   const queues = await getQueuePreviews({
     pendingClaims: summary.claims.by_status.pending ?? 0,
     pendingReports: summary.reports.by_status.pending ?? 0,
     reportedPhotos: gallery.reported,
-    unclaimed: summary.cafes.unclaimed,
+    unclaimed: Math.max(0, summary.cafes.unclaimed - importDrafts),
   })
 
   const fullName = (user?.user_metadata?.full_name as string | undefined)?.trim()
@@ -44,7 +48,8 @@ export default async function DashboardPage() {
 
   // Real totals only, as one quiet line under the work.
   const health = [
-    `${summary.cafes.total.toLocaleString()} cafés`,
+    `${Math.max(0, summary.cafes.total - importDrafts).toLocaleString()} cafés`,
+    ...(importDrafts > 0 ? [`${importDrafts.toLocaleString()} imports to review`] : []),
     `${summary.cafes.active.toLocaleString()} live`,
     `${summary.users.total.toLocaleString()} users`,
     `${summary.owners.toLocaleString()} owners`,

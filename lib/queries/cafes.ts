@@ -3,6 +3,19 @@ import { escapeLikePattern } from "@/lib/utils"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getAdminDashboardSummary } from "@/lib/queries/dashboard"
 
+// Cafés imported from Google (cafe_imports) are reviewed and published on the
+// Imports page; while they are drafts the Cafés list leaves them out, or its
+// Draft tab and Area menu would hold thousands of them. Published imports show
+// here like any other café. Needs the cafe_imports embed in the select.
+const NOT_AN_IMPORT_DRAFT = "status.neq.draft,cafe_imports.is.null"
+
+// Before nook-supabase 20261011100000_cafe_imports is applied there is no
+// cafe_imports relationship; PostgREST answers PGRST200 and the list runs
+// without the filter (there are no imports to hide then).
+function noImportsTable(error: { code?: string } | null) {
+  return error?.code === "PGRST200" || error?.code === "PGRST100"
+}
+
 export type Cafe = {
   id: string
   name: string
@@ -89,16 +102,21 @@ export type NeighborhoodOption = {
 // Deriving the options from the data keeps them in sync with what admins type.
 export async function getCafeNeighborhoods(): Promise<NeighborhoodOption[]> {
   const supabase = createAdminClient()
-  const { data, error } = await supabase
-    .from("cafes")
-    .select("neighborhood")
-    .not("neighborhood", "is", null)
+  const base = (hide: boolean) => {
+    const q = supabase
+      .from("cafes")
+      .select(hide ? "neighborhood, cafe_imports(cafe_id)" : "neighborhood")
+      .not("neighborhood", "is", null)
+    return hide ? q.or(NOT_AN_IMPORT_DRAFT) : q
+  }
+  let { data, error } = await base(true)
+  if (noImportsTable(error)) ({ data, error } = await base(false))
 
   if (error) throw error
 
   const byCanonical = new Map<string, Set<string>>()
-  for (const row of data ?? []) {
-    const raw = row.neighborhood as string | null
+  for (const row of (data ?? []) as unknown as { neighborhood: string | null }[]) {
+    const raw = row.neighborhood
     if (!raw) continue
     const canonical = raw.trim()
     if (!canonical) continue
@@ -121,16 +139,21 @@ async function resolveNeighborhoodCafeIds(
   supabase: ReturnType<typeof createAdminClient>,
   neighborhood: string
 ): Promise<string[]> {
-  const { data, error } = await supabase
-    .from("cafes")
-    .select("id, neighborhood")
-    .ilike("neighborhood", `%${escapeLikePattern(neighborhood)}%`)
+  const base = (hide: boolean) => {
+    const q = supabase
+      .from("cafes")
+      .select(hide ? "id, neighborhood, cafe_imports(cafe_id)" : "id, neighborhood")
+      .ilike("neighborhood", `%${escapeLikePattern(neighborhood)}%`)
+    return hide ? q.or(NOT_AN_IMPORT_DRAFT) : q
+  }
+  let { data, error } = await base(true)
+  if (noImportsTable(error)) ({ data, error } = await base(false))
 
   if (error) throw error
 
-  return (data ?? [])
-    .filter((row) => (row.neighborhood as string | null)?.trim() === neighborhood)
-    .map((row) => row.id as string)
+  return ((data ?? []) as unknown as { id: string; neighborhood: string | null }[])
+    .filter((row) => row.neighborhood?.trim() === neighborhood)
+    .map((row) => row.id)
 }
 
 export type CafeSort = "recent" | "az" | "rating"
@@ -233,54 +256,66 @@ export async function getCafesPage(filters?: CafeListFilters & {
 
   const sort = resolveSort(filters?.sort)
 
-  let countQuery = supabase
-    .from("cafes")
-    .select("id", { count: "exact", head: true })
+  const build = (hide: boolean) => {
+    let countQuery = supabase
+      .from("cafes")
+      .select(hide ? "id, cafe_imports(cafe_id)" : "id", { count: "exact", head: true })
 
-  let dataQuery = supabase
-    .from("cafes")
-    .select(`
-      id,
-      name,
-      neighborhood,
-      city,
-      featured_image_url,
-      status,
-      review_requested_at,
-      rating,
-      is_featured,
-      created_at,
-      cafe_owner_cafe ( owner_id )
-    `)
-    .order(sort.column, { ascending: sort.ascending, nullsFirst: false })
-    .order("id")
-    .range(from, to)
+    let dataQuery = supabase
+      .from("cafes")
+      .select(`
+        id,
+        name,
+        neighborhood,
+        city,
+        featured_image_url,
+        status,
+        review_requested_at,
+        rating,
+        is_featured,
+        created_at,
+        cafe_owner_cafe ( owner_id )${hide ? ",\n        cafe_imports ( cafe_id )" : ""}
+      `)
+      .order(sort.column, { ascending: sort.ascending, nullsFirst: false })
+      .order("id")
+      .range(from, to)
 
-  countQuery = applyCafeListFilters(countQuery, filters)
-  dataQuery = applyCafeListFilters(dataQuery, filters)
+    countQuery = applyCafeListFilters(countQuery, filters)
+    dataQuery = applyCafeListFilters(dataQuery, filters)
 
-  if (allowedIds !== null) {
-    countQuery = countQuery.in("id", allowedIds)
-    dataQuery = dataQuery.in("id", allowedIds)
+    if (hide) {
+      countQuery = countQuery.or(NOT_AN_IMPORT_DRAFT)
+      dataQuery = dataQuery.or(NOT_AN_IMPORT_DRAFT)
+    }
+
+    if (allowedIds !== null) {
+      countQuery = countQuery.in("id", allowedIds)
+      dataQuery = dataQuery.in("id", allowedIds)
+    }
+
+    // "unclaimed" subtracts the claimed set from whatever is left after the other
+    // filters. An empty claimed set means nothing to exclude — and `not.in.()`
+    // is not valid PostgREST, so it has to be skipped rather than sent empty.
+    if (ownerFilter === "unclaimed" && claimedIds.length > 0) {
+      const exclusion = `(${claimedIds.join(",")})`
+      countQuery = countQuery.not("id", "in", exclusion)
+      dataQuery = dataQuery.not("id", "in", exclusion)
+    }
+
+    return Promise.all([countQuery, dataQuery])
   }
 
-  // "unclaimed" subtracts the claimed set from whatever is left after the other
-  // filters. An empty claimed set means nothing to exclude — and `not.in.()`
-  // is not valid PostgREST, so it has to be skipped rather than sent empty.
-  if (ownerFilter === "unclaimed" && claimedIds.length > 0) {
-    const exclusion = `(${claimedIds.join(",")})`
-    countQuery = countQuery.not("id", "in", exclusion)
-    dataQuery = dataQuery.not("id", "in", exclusion)
+  let [countResult, dataResult] = await build(true)
+  if (noImportsTable(countResult.error) || noImportsTable(dataResult.error)) {
+    ;[countResult, dataResult] = await build(false)
   }
-
-  const [countResult, dataResult] = await Promise.all([countQuery, dataQuery])
 
   if (countResult.error) throw countResult.error
   if (dataResult.error) throw dataResult.error
 
   const total = countResult.count ?? 0
   return {
-    cafes: (dataResult.data ?? []) as Array<Cafe & { cafe_owner_cafe: { owner_id: string }[] | null }>,
+    cafes: (dataResult.data ?? []) as unknown as Array<Cafe & { cafe_owner_cafe: { owner_id: string }[] | null }>,
     total,
     page,
     pageSize,
@@ -383,19 +418,25 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 /** Listing counts per status, for the Cafés page tabs. */
 export async function getCafeStatusCounts() {
   const supabase = createAdminClient()
-  const count = (status?: string) => {
-    let q = supabase.from("cafes").select("id", { count: "exact", head: true })
-    if (status) q = q.eq("status", status)
-    return q
+  const run = (hide: boolean) => {
+    const count = (status?: string) => {
+      let q = supabase.from("cafes").select(hide ? "id, cafe_imports(cafe_id)" : "id", { count: "exact", head: true })
+      if (hide) q = q.or(NOT_AN_IMPORT_DRAFT)
+      if (status) q = q.eq("status", status)
+      return q
+    }
+    return Promise.all([
+      count(),
+      count("active"),
+      count("draft"),
+      count("inactive"),
+      count("draft").not("review_requested_at", "is", null),
+    ])
   }
-  const [all, active, draft, inactive, toPublish] = await Promise.all([
-    count(),
-    count("active"),
-    count("draft"),
-    count("inactive"),
-    count("draft").not("review_requested_at", "is", null),
-  ])
-  for (const r of [all, active, draft, inactive, toPublish]) if (r.error) throw r.error
+  let results = await run(true)
+  if (results.some((r) => noImportsTable(r.error))) results = await run(false)
+  const [all, active, draft, inactive, toPublish] = results
+  for (const r of results) if (r.error) throw r.error
   return {
     all: all.count ?? 0,
     active: active.count ?? 0,

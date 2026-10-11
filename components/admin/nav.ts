@@ -2,6 +2,7 @@ import {
   ChartLineUpIcon,
   ChatCircleTextIcon,
   ClipboardTextIcon,
+  CloudArrowDownIcon,
   ImagesIcon,
   MapPinAreaIcon,
   PaperPlaneTiltIcon,
@@ -46,6 +47,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
     label: "Catalog",
     items: [
       { title: "Cafés", url: "/admin/cafes", icon: StorefrontIcon },
+      { title: "Imports", url: "/admin/imports", icon: CloudArrowDownIcon },
       { title: "Outreach", url: "/admin/outreach", icon: PaperPlaneTiltIcon },
       { title: "Tags", url: "/admin/tags", icon: TagIcon },
       ...(FEATURES.crawls
