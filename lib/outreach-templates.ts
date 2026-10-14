@@ -18,9 +18,14 @@ export const OUTREACH_TEMPLATES: OutreachTemplate[] = [
     hint: "We listed them from public info; they don't know yet.",
     body: `Hi {cafe}! 👋 We're Nook, a free app and website that helps people find cafes around Cebu by what they need: WiFi, outlets, study spots and more.
 
-We've added {cafe} to Nook, and here's your page: {link}
+We've added {cafe} to Nook, and your listing is ready for you to claim for free: {link}
 
-We put it together from public info, so if anything's off (hours, menu, photos), just tell us and we'll fix it. Or you can claim your page for free at business.nookph.app and update it yourself anytime. Salamat! ☕`,
+Claiming it lets you update your hours, menu, photos and amenities yourself anytime. It only takes a few minutes:
+1. Go to business.nookph.app and find {cafe}
+2. Create your free account
+3. Send us the verification code here and we'll approve it right away
+
+We put the page together from public info, so if you'd rather we fix something for you, just tell us. Salamat! ☕`,
   },
   {
     key: "added-no-photos",
@@ -28,9 +33,14 @@ We put it together from public info, so if anything's off (hours, menu, photos),
     hint: "Same, but the page has no photos yet, so ask for some.",
     body: `Hi {cafe}! 👋 We're Nook, a free app and website that helps people find cafes around Cebu by what they need: WiFi, outlets, study spots and more.
 
-We've added {cafe} to Nook: {link}
+We've added {cafe} to Nook, and your listing is ready for you to claim for free: {link}
 
-Your page doesn't have photos yet. Could you send us a few (interior, drinks, food) so people can see your space? Or you can claim your page for free at business.nookph.app and add them yourself anytime. Salamat! ☕`,
+It doesn't have photos yet, so claiming it is the quickest way to show people your space. You can add your own photos and keep your hours and menu up to date anytime:
+1. Go to business.nookph.app and find {cafe}
+2. Create your free account
+3. Send us the verification code here and we'll approve it right away
+
+Or if you'd rather, send us a few photos here (interior, drinks, food) and we'll add them for you. Salamat! ☕`,
   },
   {
     key: "form",
@@ -48,7 +58,7 @@ Anything you'd like us to update in the meantime? Salamat kaayo! ☕`,
     key: "follow-up",
     label: "Follow-up",
     hint: "No reply after 3–4 days.",
-    body: `Hi again! Just checking if you saw your Nook page: {link}. Happy to update anything for you, or you can claim it for free at business.nookph.app. ☕`,
+    body: `Hi again! Just checking if you saw your Nook page: {link}. It's still waiting for you to claim it for free at business.nookph.app. Once you've signed up, send us the verification code here and we'll approve it right away. ☕`,
   },
 ]
 
